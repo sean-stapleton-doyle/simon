@@ -91,14 +91,18 @@ processes sharing one interpreter stay distinguishable:
 realmem 'train|serve'
 ```
 
-Matching is case-insensitive unless you pass `-c`. Use `-l` to print full
-command lines instead of process names, clipped to your terminal width:
+Matching is case-insensitive unless you pass `-c`. Use `-l` to add a
+`COMMAND LINE` column, clipped to your terminal width:
 
 ```
 $ realmem train -l
-    PID   FOOTPRINT        PEAK  COMMAND
-  30655        7.7G       37.1G  .../python3 .../follower train data/asap --holdout Moza
+    PID   FOOTPRINT        PEAK  COMMAND     COMMAND LINE
+  30655        9.3G       37.1G  python3.12  /Users/sean/.venv/bin/python3 .../follower train
+  27827       12.9M       13.1M  uv          uv run follower train data/asap --holdout Mozart
 ```
+
+Long paths can push the distinguishing arguments past the right edge. Widen
+the terminal, or pipe the output, which falls back to 160 columns.
 
 Because the match runs against whole command lines, a wrapper that mentions
 the pattern in its own arguments matches too. `realmem python` finds `uv tool
@@ -114,7 +118,7 @@ the pattern.
 | `-m`, `--match RE` | Filter by extended regex. Same as a bare non-numeric argument. |
 | `--sum` | Print only the aggregate total. Requires a pattern. |
 | `-c`, `--case` | Match case-sensitively. |
-| `-l`, `--long` | Show full command lines instead of process names. |
+| `-l`, `--long` | Add a `COMMAND LINE` column with full arguments. |
 | `-h`, `--help` | Print usage. |
 
 ## Permissions

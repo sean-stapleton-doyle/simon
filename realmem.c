@@ -187,7 +187,7 @@ static void usage(void)
 		"  -m, --match RE  keep only processes matching extended regex RE\n"
 		"      --sum       print just the total for matches, no rows\n"
 		"  -c, --case      match case-sensitively (default: insensitive)\n"
-		"  -l, --long      show the full command line instead of the name\n"
+		"  -l, --long      add a column with the full command line\n"
 		"  -h, --help      this message\n"
 		"\n"
 		"A bare argument is a count if it is all digits, otherwise a regex.\n"
@@ -334,19 +334,49 @@ int main(int argc, char **argv)
 	qsort(list, n, sizeof(entry_t), by_footprint);
 
 	if (!sum_only) {
-		printf("%7s  %10s  %10s  %s\n", "PID", "FOOTPRINT", "PEAK", "COMMAND");
-		for (i = 0; i < n && (limit <= 0 || i < limit); i++) {
-			char fp[16], pk[16];
-			const char *label = list[i].name;
+		int rows = (limit > 0 && limit < n) ? limit : n;
+		int namew = (int)strlen("COMMAND"), cmdw;
 
-			if (longfmt && list[i].cmdline)
-				label = list[i].cmdline;
+		// Size the name column to the rows we actually print, so the
+		// command line gets every remaining character.
+		if (longfmt) {
+			for (i = 0; i < rows; i++) {
+				int l = (int)strlen(list[i].name);
+
+				if (l > namew)
+					namew = l;
+			}
+			if (namew > 24)
+				namew = 24;
+		}
+
+		cmdw = width - 35 - namew;   // 33 for the numeric columns, 2 for the gap
+		if (cmdw < 20)
+			cmdw = 20;
+
+		if (longfmt)
+			printf("%7s  %10s  %10s  %-*s  %s\n", "PID", "FOOTPRINT",
+			       "PEAK", namew, "COMMAND", "COMMAND LINE");
+		else
+			printf("%7s  %10s  %10s  %s\n", "PID", "FOOTPRINT",
+			       "PEAK", "COMMAND");
+
+		for (i = 0; i < rows; i++) {
+			char fp[16], pk[16];
 
 			humanize(list[i].footprint, fp, sizeof fp);
 			humanize(list[i].lifetime_max, pk, sizeof pk);
-			printf("%7d  %10s  %10s  %.*s\n", list[i].pid, fp,
-			       list[i].lifetime_max ? pk : "-",
-			       width - 33, label);
+
+			if (longfmt)
+				printf("%7d  %10s  %10s  %-*.*s  %.*s\n",
+				       list[i].pid, fp,
+				       list[i].lifetime_max ? pk : "-",
+				       namew, namew, list[i].name,
+				       cmdw, list[i].cmdline ? list[i].cmdline : "-");
+			else
+				printf("%7d  %10s  %10s  %s\n", list[i].pid, fp,
+				       list[i].lifetime_max ? pk : "-",
+				       list[i].name);
 		}
 	}
 
