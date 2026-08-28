@@ -67,6 +67,56 @@ The `file cache` figure is worth reading before you conclude that memory is
 short. It counts toward "used" in most tools but the kernel reclaims it on
 demand.
 
+## Filtering
+
+Pass a bare argument that isn't all digits and `realmem` treats it as an
+extended regular expression, keeping only the processes that match:
+
+```sh
+realmem python
+```
+
+To collapse the matches to a single total, add `--sum`:
+
+```sh
+$ realmem python --sum
+
+20 processes matching /python/, 23.0G total (largest 7.7G, pid 30655)
+```
+
+The pattern matches the full command line, not just the process name, so
+processes sharing one interpreter stay distinguishable:
+
+```sh
+realmem 'train|serve'
+```
+
+Matching is case-insensitive unless you pass `-c`. Use `-l` to print full
+command lines instead of process names, clipped to your terminal width:
+
+```
+$ realmem train -l
+    PID   FOOTPRINT        PEAK  COMMAND
+  30655        7.7G       37.1G  .../python3 .../follower train data/asap --holdout Moza
+```
+
+Because the match runs against whole command lines, a wrapper that mentions
+the pattern in its own arguments matches too. `realmem python` finds `uv tool
+uvx --python 3.12` for this reason. Use `-l` to see why something matched.
+`realmem` excludes itself from results, since its own arguments always contain
+the pattern.
+
+## Options
+
+| Option | Effect |
+| --- | --- |
+| `-n`, `--count N` | Maximum rows to print. Default 20; `0` prints all. |
+| `-m`, `--match RE` | Filter by extended regex. Same as a bare non-numeric argument. |
+| `--sum` | Print only the aggregate total. Requires a pattern. |
+| `-c`, `--case` | Match case-sensitively. |
+| `-l`, `--long` | Show full command lines instead of process names. |
+| `-h`, `--help` | Print usage. |
+
 ## Permissions
 
 `realmem` reads processes that share your user ID. System processes owned by
