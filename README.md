@@ -115,4 +115,3 @@ name = "ML Trainer"
 - **Why `proc_pid_rusage()`**: Reading `ri_phys_footprint` and `ri_lifetime_max_phys_footprint` via `proc_pid_rusage()` (`<libproc.h>`) works for all same-UID processes without `sudo`. The Mach alternative (`task_info(TASK_VM_INFO)`) requires `task_for_pid()`, which needs root or `com.apple.system-task-ports`.
 - **Command lines & grouping**: Full `argv` is read via `sysctl(CTL_KERN, KERN_PROCARGS2)` (also unprivileged for same-UID processes), and `-g` resolves the outermost `.app` bundle via `proc_pidpath()` so browser/Electron helpers collapse under their parent app.
 - **System summary**: Host totals come from `host_statistics64(HOST_VM_INFO64)`, separating `wire_count`, `internal_page_count` (anonymous), `compressor_page_count`, and `external_page_count` (reclaimable file cache).
-- A zero-compile shell fallback wrapping `top` is kept in [realmem.sh](realmem.sh).
