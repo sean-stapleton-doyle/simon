@@ -1,168 +1,118 @@
 # realmem
 
-Rank macOS processes by physical footprint instead of resident set size (RSS).
+[![CI](https://github.com/sean-stapleton-doyle/realmem/actions/workflows/ci.yml/badge.svg)](https://github.com/sean-stapleton-doyle/realmem/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/sean-stapleton-doyle/realmem)](https://github.com/sean-stapleton-doyle/realmem/releases/latest)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-`ps`, `htop`, and `btop` report RSS, which is a poor measure of what a process
-actually costs. RSS double-counts shared framework pages across processes,
-omits IOKit and GPU allocations, and counts compressed pages at their
-uncompressed size. The errors run in both directions:
+Rank macOS processes by physical memory footprint (`phys_footprint`) instead of resident set size (RSS).
 
-| Process | RSS (`ps`) | Footprint | |
+## Why
+
+`ps`, `htop`, and `btop` report RSS, which is misleading on macOS: it double-counts shared framework pages, misses IOKit/GPU allocations, and counts compressed pages at their uncompressed size.
+
+| Process | RSS (`ps`) | Footprint | Why RSS is wrong |
 | --- | --- | --- | --- |
-| WindowServer | 172 MB | 867 MB | RSS misses IOKit and GPU surfaces |
-| Finder | 106 MB | 456 MB | 387 MB was sitting compressed |
-| kernel_task | 0 MB | 395 MB | invisible to RSS entirely |
-| claude | 727 MB | 416 MB | RSS overcounts shared frameworks |
+| WindowServer | 172 MB | 867 MB | Misses IOKit and GPU surfaces |
+| Finder | 106 MB | 456 MB | Compressed pages hidden |
+| kernel_task | 0 MB | 395 MB | Invisible to RSS |
+| claude | 727 MB | 416 MB | Overcounts shared frameworks |
 
-`realmem` reports `phys_footprint`, the same metric the **Memory** column of
-Activity Monitor shows and the one the kernel uses for memory limits. It
-excludes clean file-backed pages, so the operating system's disk cache doesn't
-inflate the numbers.
+`realmem` reports `phys_footprint`—the same metric shown in Activity Monitor's **Memory** column—along with lifetime peak, app-level grouping, and a system summary separating wired, anonymous, compressed, and reclaimable file-cache memory.
 
-## Build and install
+## Install
 
-To build `realmem` and put it on your `PATH`, run:
+### Prebuilt binary (Apple Silicon / arm64)
 
 ```sh
-make install
+curl -fsSL https://github.com/sean-stapleton-doyle/realmem/releases/latest/download/realmem-macos-arm64.tar.gz \
+  | tar -xz realmem
+xattr -d com.apple.quarantine realmem 2>/dev/null || true
+mv realmem ~/.local/bin/realmem
 ```
 
-`make install` symlinks `~/.local/bin/realmem` to the binary in `build/`, so a
-later `make` refreshes the command without reinstalling. To install elsewhere,
-set `PREFIX`:
+### Build from source
+
+Requires CMake 3.20+, Ninja, and Xcode Command Line Tools (C++20). Dependencies (`FTXUI`, `CLI11`, `toml++`) are fetched automatically via `FetchContent`.
 
 ```sh
-make install PREFIX=/usr/local
+make install          # builds and symlinks ~/.local/bin/realmem -> build/realmem
+make test             # runs the unit test suite
 ```
 
 ## Usage
 
-Print the 20 largest processes:
-
 ```sh
-realmem
+realmem               # top 20 processes (styled in TTY, plain when piped)
+realmem 40            # top 40 processes
+realmem -g            # group helper/renderer processes by application
+realmem -s peak -l    # sort by lifetime peak with full command lines
+realmem python        # filter by extended regex over full command lines
+realmem python --sum  # aggregate total for matching processes
+sudo realmem          # include other users' processes (e.g. WindowServer)
 ```
 
-Pass a count to change how many rows appear:
+Example output (`realmem -g 5`):
 
-```sh
-realmem 40
+```text
+  PROCS   FOOTPRINT    %RAM  USAGE             PEAK  APPLICATION
+────────────────────────────────────────────────────────────────────────────────
+     35       11.5G   24.0%  ██████████       19.8G  WebKit
+     23        3.3G    6.9%  ██▊               7.5G  Chrome
+     27        2.9G    6.1%  ██▍               7.1G  Visual Studio Code
+
+858 of 1189 processes readable across 453 apps, 42.6G total footprint
+
+system: 48.0G total | 3.9G wired | 25.8G anonymous | 4.6G compressor | 10.6G file cache (reclaimable)
 ```
 
-Output includes each process's current footprint, its lifetime peak, and a
-system summary separating reclaimable file cache from anonymous memory:
+Key flags:
 
-```
-    PID   FOOTPRINT        PEAK  COMMAND
-    473      721.3M      863.8M  ghostty
-  95924      640.4M      958.9M  Preview
-    555      456.7M      523.1M  Finder
-
-562 of 853 processes readable, 25.0G total footprint
-
-system: 48.0G total | 15.9G file cache (reclaimable) | 22.9G anonymous | 4.0G compressor
-```
-
-The `file cache` figure is worth reading before you conclude that memory is
-short. It counts toward "used" in most tools but the kernel reclaims it on
-demand.
-
-## Filtering
-
-Pass a bare argument that isn't all digits and `realmem` treats it as an
-extended regular expression, keeping only the processes that match:
-
-```sh
-realmem python
-```
-
-To collapse the matches to a single total, add `--sum`:
-
-```sh
-$ realmem python --sum
-
-20 processes matching /python/, 23.0G total (largest 7.7G, pid 30655)
-```
-
-The pattern matches the full command line, not just the process name, so
-processes sharing one interpreter stay distinguishable:
-
-```sh
-realmem 'train|serve'
-```
-
-Matching is case-insensitive unless you pass `-c`. Use `-l` to add a
-`COMMAND LINE` column, clipped to your terminal width:
-
-```
-$ realmem train -l
-    PID   FOOTPRINT        PEAK  COMMAND     COMMAND LINE
-  30655        9.3G       37.1G  python3.12  /Users/sean/.venv/bin/python3 .../follower train
-  27827       12.9M       13.1M  uv          uv run follower train data/asap --holdout Mozart
-```
-
-Long paths can push the distinguishing arguments past the right edge. Widen
-the terminal, or pipe the output, which falls back to 160 columns.
-
-Because the match runs against whole command lines, a wrapper that mentions
-the pattern in its own arguments matches too. `realmem python` finds `uv tool
-uvx --python 3.12` for this reason. Use `-l` to see why something matched.
-`realmem` excludes itself from results, since its own arguments always contain
-the pattern.
-
-## Options
-
-| Option | Effect |
+| Flag | Description |
 | --- | --- |
-| `-n`, `--count N` | Maximum rows to print. Default 20; `0` prints all. |
-| `-m`, `--match RE` | Filter by extended regex. Same as a bare non-numeric argument. |
-| `--sum` | Print only the aggregate total. Requires a pattern. |
-| `-c`, `--case` | Match case-sensitively. |
-| `-l`, `--long` | Add a `COMMAND LINE` column with full arguments. |
-| `-h`, `--help` | Print usage. |
+| `-n, --count N` | Max rows to print (default `20`, `0` for all) |
+| `-m, --match RE` | Filter by extended regex (or pass a bare non-numeric arg) |
+| `-s, --sort FIELD` | Sort by `footprint`, `peak`, `pid`, `name`, or `count` (with `-g`) |
+| `-r, --reverse` | Reverse sort order |
+| `-g, --group` | Aggregate helpers by `.app` bundle / process name |
+| `-l, --long` | Show full command line column |
+| `-c, --case` | Case-sensitive regex matching |
+| `--sum` | Print only the aggregate total for matches |
+| `--bars` / `--no-bars` | Toggle inline usage bars |
+| `--color MODE` | `auto`, `always`, or `never` (`--plain` disables FTXUI styling) |
+| `--config PATH` / `--no-config` | Override or disable TOML config |
 
-## Permissions
+## Configuration
 
-`realmem` reads processes that share your user ID. System processes owned by
-other users, such as `WindowServer` under `_windowserver`, return `EPERM` and
-are skipped. The footer reports how many processes were readable.
+`realmem` loads defaults from the first existing file in:
 
-To cover every process, run with `sudo`:
+1. `$XDG_CONFIG_HOME/realmem/config.toml`
+2. `~/.config/realmem/config.toml`
+3. `~/.realmem.toml`
 
-```sh
-sudo realmem
+CLI flags always override config values.
+
+```toml
+count = 25
+sort = "footprint"     # footprint | peak | pid | name | count
+reverse = false
+group = false
+long = false
+case_sensitive = false
+bars = true
+system = true
+color = "auto"         # auto | always | never
+plain = false
+
+# Optional custom regex rules evaluated first under -g/--group
+[[grouping.rules]]
+pattern = "python3.*train"
+name = "ML Trainer"
 ```
 
-## How it works
+## Technical notes
 
-`realmem` calls `proc_pid_rusage()` from `<libproc.h>` and reads
-`ri_phys_footprint`. That call works on same-user processes without elevated
-privileges.
-
-The Mach equivalent, `task_info()` with the `TASK_VM_INFO` flavor, exposes the
-same value as `task_vm_info_data_t.phys_footprint`, along with ledger peaks and
-compression counters. It needs a task port, and `task_for_pid()` requires root
-or the `com.apple.system-task-ports` entitlement for any process other than the
-caller. Apple's own `footprint -a` refuses to run unprivileged for this reason.
-
-Note that `TASK_VM_INFO_REV0_COUNT` predates the field. Version the `count`
-argument if you target older kernels.
-
-System totals come from `host_statistics64()` with `HOST_VM_INFO64`, which
-separates `external_page_count` (file-backed and reclaimable) from
-`internal_page_count` (anonymous) and `compressor_page_count`.
-
-Foundation exposes no equivalent API. `NSProcessInfo.physicalMemory` reports
-only total installed RAM, and `os_proc_available_memory()` is iOS-only.
-
-## Related tools
-
-- `top -o mem` sorts by the same metric, no compilation required. Add
-  `-stats pid,command,mem,cmprs,purg` to break out compressed pages.
-- `footprint -p <pid>` gives a per-category breakdown for one process, and
-  `sudo footprint -a` covers the whole system.
-- `vmmap --summary <pid>` splits one process into dirty, clean, and swapped
-  regions.
-- `memory_pressure` reports whether memory is actually short.
-- `realmem.sh` in this repository groups helper processes by application. It
-  wraps `top`, so it needs no compiler.
+- **Why `phys_footprint`**: It is the kernel's ledger metric for true memory pressure—excluding clean reclaimable file-backed pages (the OS disk cache), accounting for compressed pages at compressed size, and including IOKit/GPU allocations.
+- **Why `proc_pid_rusage()`**: Reading `ri_phys_footprint` and `ri_lifetime_max_phys_footprint` via `proc_pid_rusage()` (`<libproc.h>`) works for all same-UID processes without `sudo`. The Mach alternative (`task_info(TASK_VM_INFO)`) requires `task_for_pid()`, which needs root or `com.apple.system-task-ports`.
+- **Command lines & grouping**: Full `argv` is read via `sysctl(CTL_KERN, KERN_PROCARGS2)` (also unprivileged for same-UID processes), and `-g` resolves the outermost `.app` bundle via `proc_pidpath()` so browser/Electron helpers collapse under their parent app.
+- **System summary**: Host totals come from `host_statistics64(HOST_VM_INFO64)`, separating `wire_count`, `internal_page_count` (anonymous), `compressor_page_count`, and `external_page_count` (reclaimable file cache).
+- A zero-compile shell fallback wrapping `top` is kept in [realmem.sh](realmem.sh).
