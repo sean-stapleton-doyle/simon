@@ -6,7 +6,7 @@
 #include <string_view>
 #include <vector>
 
-namespace realmem {
+namespace simon {
 
 enum class SortField {
   Footprint,
@@ -80,9 +80,9 @@ std::optional<OutputFormat> parse_output_format(std::string_view value);
 std::string_view to_string(OutputFormat format);
 
 // Discovers the first existing config file in standard locations:
-//   1. $XDG_CONFIG_HOME/realmem/config.toml
-//   2. $HOME/.config/realmem/config.toml
-//   3. $HOME/.realmem.toml
+//   1. $XDG_CONFIG_HOME/simon/config.toml
+//   2. $HOME/.config/simon/config.toml
+//   3. $HOME/.simon.toml
 std::optional<std::filesystem::path> discover_config_path(
     const char* xdg_config_home = nullptr,
     const char* home = nullptr);
@@ -97,4 +97,4 @@ std::optional<std::string> validate_config(const Config& cfg);
 // Parses CLI arguments and merges with TOML config (precedence: CLI > TOML > defaults).
 ParseResult parse_args_and_config(int argc, const char* const* argv);
 
-}  // namespace realmem
+}  // namespace simon

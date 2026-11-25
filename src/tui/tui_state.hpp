@@ -10,7 +10,7 @@
 #include <string>
 #include <string_view>
 
-namespace realmem {
+namespace simon {
 
 enum class ViewMode {
   Flat,
@@ -95,4 +95,4 @@ class TuiState {
   std::deque<double> cpu_history_;
 };
 
-}  // namespace realmem
+}  // namespace simon

@@ -7,7 +7,7 @@
 #include <string>
 #include <vector>
 
-namespace realmem {
+namespace simon {
 
 struct PerfLevelTopology {
   std::string name;
@@ -36,4 +36,4 @@ class MacCpuSampler final : public ICpuSampler {
   std::vector<CoreTicks> prev_ticks_;
 };
 
-}  // namespace realmem
+}  // namespace simon

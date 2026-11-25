@@ -1,12 +1,12 @@
 <div align="center">
 
-# realmem
+# simon
 
-[![CI](https://github.com/sean-stapleton-doyle/realmem/actions/workflows/ci.yml/badge.svg)](https://github.com/sean-stapleton-doyle/realmem/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/github/v/release/sean-stapleton-doyle/realmem)](https://github.com/sean-stapleton-doyle/realmem/releases/latest)
+[![CI](https://github.com/sean-stapleton-doyle/simon/actions/workflows/ci.yml/badge.svg)](https://github.com/sean-stapleton-doyle/simon/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/sean-stapleton-doyle/simon)](https://github.com/sean-stapleton-doyle/simon/releases/latest)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-Rank macOS processes by physical memory footprint (`phys_footprint`) instead of resident set size (RSS), with Apple Silicon GPU headroom, swap/pressure, process trees, and a read-only live TUI.
+**Si**licon **Mon**itor — rank macOS processes by physical memory footprint (`phys_footprint`) instead of RSS, with Apple Silicon GPU headroom, swap/pressure, process trees, and a read-only live TUI.
 
 </div>
 
@@ -21,17 +21,17 @@ Rank macOS processes by physical memory footprint (`phys_footprint`) instead of 
 | kernel_task | 0 MB | 395 MB | Invisible to RSS |
 | claude | 727 MB | 416 MB | Overcounts shared frameworks |
 
-`realmem` reports `phys_footprint` (Activity Monitor's **Memory** column), lifetime peaks, `.app` grouping, parent/child process tree rollups, swap & memory pressure, Metal GPU headroom, opt-in Apple Silicon CPU tiers / disk I/O, JSON output, and an optional live monitor (`-w`).
+`simon` reports `phys_footprint` (Activity Monitor's **Memory** column), lifetime peaks, `.app` grouping, parent/child process tree rollups, swap & memory pressure, Metal GPU headroom, opt-in Apple Silicon CPU tiers / disk I/O, JSON output, and an optional live monitor (`-w`).
 
 ## Install
 
 ### Prebuilt binary (Apple Silicon / arm64)
 
 ```sh
-curl -fsSL https://github.com/sean-stapleton-doyle/realmem/releases/latest/download/realmem-macos-arm64.tar.gz \
-  | tar -xz realmem
-xattr -d com.apple.quarantine realmem 2>/dev/null || true
-mv realmem ~/.local/bin/realmem
+curl -fsSL https://github.com/sean-stapleton-doyle/simon/releases/latest/download/simon-macos-arm64.tar.gz \
+  | tar -xz simon
+xattr -d com.apple.quarantine simon 2>/dev/null || true
+mv simon ~/.local/bin/simon
 ```
 
 ### Build from source
@@ -39,24 +39,24 @@ mv realmem ~/.local/bin/realmem
 Requires CMake 3.20+, Ninja, and Xcode Command Line Tools (C++20 / ObjC++20). Dependencies (`FTXUI`, `CLI11`, `toml++`, `nlohmann/json`) are fetched automatically via `FetchContent`.
 
 ```sh
-make install          # builds and symlinks ~/.local/bin/realmem -> build/realmem
+make install          # builds and symlinks ~/.local/bin/simon -> build/simon
 make test             # runs the unit test suite
 ```
 
 ## Usage
 
 ```sh
-realmem               # top 20 processes (styled in TTY, plain when piped)
-realmem -g            # group helper/renderer processes by .app bundle
-realmem -t            # parent/child process tree with rolled-up subtree footprints
-realmem -w            # read-only live TUI monitor (search /, toggle g/t/s/r/p, quit q)
-realmem --cpu --disk  # include Apple Silicon CPU tiers, watts, and disk I/O rates
-realmem -o json       # machine-readable JSON for scripts and LLMs
-sudo realmem --gpu    # add per-process GPU memory column (sort with -s gpu)
-realmem python --sum  # aggregate total for matching processes
+simon               # top 20 processes (styled in TTY, plain when piped)
+simon -g            # group helper/renderer processes by .app bundle
+simon -t            # parent/child process tree with rolled-up subtree footprints
+simon -w            # read-only live TUI monitor (search /, toggle g/t/s/r/p, quit q)
+simon --cpu --disk  # include Apple Silicon CPU tiers, watts, and disk I/O rates
+simon -o json       # machine-readable JSON for scripts and LLMs
+sudo simon --gpu    # add per-process GPU memory column (sort with -s gpu)
+simon python --sum  # aggregate total for matching processes
 ```
 
-Example output (`realmem 5 --cpu --disk`):
+Example output (`simon 5 --cpu --disk`):
 
 ```text
     PID   FOOTPRINT      CPU        DISK        PEAK  COMMAND
@@ -96,19 +96,19 @@ Key flags:
 
 ### Agent skill
 
-Install the bundled [SKILL.md](skills/realmem/SKILL.md) so coding agents know how to query `realmem -o json`:
+Install the bundled [SKILL.md](skills/simon/SKILL.md) so coding agents know how to query `simon -o json`:
 
 ```sh
-mkdir -p ~/.agents/skills/realmem && realmem --skill > ~/.agents/skills/realmem/SKILL.md
+mkdir -p ~/.agents/skills/simon && simon --skill > ~/.agents/skills/simon/SKILL.md
 ```
 
 ## Configuration
 
-`realmem` loads defaults from the first existing file in:
+`simon` loads defaults from the first existing file in:
 
-1. `$XDG_CONFIG_HOME/realmem/config.toml`
-2. `~/.config/realmem/config.toml`
-3. `~/.realmem.toml`
+1. `$XDG_CONFIG_HOME/simon/config.toml`
+2. `~/.config/simon/config.toml`
+3. `~/.simon.toml`
 
 CLI flags always override config values.
 

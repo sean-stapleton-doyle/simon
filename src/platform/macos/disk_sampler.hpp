@@ -2,11 +2,11 @@
 
 #include "platform/samplers.hpp"
 
-namespace realmem {
+namespace simon {
 
 class MacDiskSampler final : public IDiskSampler {
  public:
   DiskInfo sample() override;
 };
 
-}  // namespace realmem
+}  // namespace simon

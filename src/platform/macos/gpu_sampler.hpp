@@ -6,7 +6,7 @@
 #include <cstdint>
 #include <string>
 
-namespace realmem {
+namespace simon {
 
 // Combines graphics ledger counters into a non-negative byte count.
 std::uint64_t combine_graphics_ledger(std::int64_t footprint, std::int64_t compressed);
@@ -24,4 +24,4 @@ class MacGpuSampler final : public IGpuSampler {
   std::uint32_t cached_cores_ = 0;
 };
 
-}  // namespace realmem
+}  // namespace simon

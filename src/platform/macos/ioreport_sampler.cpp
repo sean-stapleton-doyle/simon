@@ -39,7 +39,7 @@ void IOReportIterate(CFDictionaryRef samples, int (^block)(CFDictionaryRef chann
 
 }  // extern "C"
 
-namespace realmem {
+namespace simon {
 
 namespace {
 
@@ -254,4 +254,4 @@ void IoReportSampler::sample_into(CpuInfo& cpu, GpuInfo& gpu, TelemetryInfo& tel
   apply_cluster_residency(cpu_clusters, cpu);
 }
 
-}  // namespace realmem
+}  // namespace simon

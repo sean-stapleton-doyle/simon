@@ -5,7 +5,7 @@
 #include <cmath>
 #include <stdexcept>
 
-namespace realmem {
+namespace simon {
 
 namespace {
 
@@ -271,4 +271,4 @@ void TuiState::jump_bottom(std::size_t viewport_rows) {
   clamp_selection(viewport_rows);
 }
 
-}  // namespace realmem
+}  // namespace simon

@@ -7,7 +7,7 @@
 #include <cstdint>
 #include <string_view>
 
-namespace realmem {
+namespace simon {
 
 // Converts an IOReport energy delta into Watts given its unit label ("mJ", "uJ", "nJ", "J").
 double energy_delta_to_watts(std::int64_t energy, std::string_view unit, double dt_sec);
@@ -33,4 +33,4 @@ class IoReportSampler final : public ITelemetrySampler {
   std::chrono::steady_clock::time_point prev_time_{};
 };
 
-}  // namespace realmem
+}  // namespace simon

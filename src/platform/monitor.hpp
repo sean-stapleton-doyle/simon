@@ -7,7 +7,7 @@
 #include <memory>
 #include <optional>
 
-namespace realmem {
+namespace simon {
 
 // Builds a SampleRequest from CLI/TOML Config (only requesting expensive fields when needed).
 SampleRequest build_sample_request(const Config& cfg, std::optional<pid_t> self_pid = std::nullopt);
@@ -44,4 +44,4 @@ class SystemMonitor {
 // Creates a SystemMonitor wired with native macOS samplers.
 SystemMonitor create_macos_monitor();
 
-}  // namespace realmem
+}  // namespace simon

@@ -4,7 +4,7 @@
 
 #include <nlohmann/json.hpp>
 
-namespace realmem {
+namespace simon {
 
 namespace {
 
@@ -176,4 +176,4 @@ std::string JsonRenderer::render(const QuerySummary& summary,
   return root.dump(2) + "\n";
 }
 
-}  // namespace realmem
+}  // namespace simon

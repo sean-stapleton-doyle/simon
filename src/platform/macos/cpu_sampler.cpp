@@ -10,7 +10,7 @@
 #include <format>
 #include <numeric>
 
-namespace realmem {
+namespace simon {
 
 namespace {
 
@@ -171,4 +171,4 @@ CpuInfo MacCpuSampler::sample() {
   return info;
 }
 
-}  // namespace realmem
+}  // namespace simon

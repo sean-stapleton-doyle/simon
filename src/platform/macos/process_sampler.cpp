@@ -10,7 +10,7 @@
 #include <format>
 #include <stdexcept>
 
-namespace realmem {
+namespace simon {
 
 namespace {
 
@@ -207,4 +207,4 @@ ProcessSnapshot MacProcessSampler::sample(const SampleRequest& req) {
   return snap;
 }
 
-}  // namespace realmem
+}  // namespace simon

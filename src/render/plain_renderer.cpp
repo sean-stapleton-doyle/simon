@@ -6,7 +6,7 @@
 #include <format>
 #include <sstream>
 
-namespace realmem {
+namespace simon {
 
 namespace {
 
@@ -193,4 +193,4 @@ std::string PlainRenderer::render(const QuerySummary& summary,
   return out.str();
 }
 
-}  // namespace realmem
+}  // namespace simon

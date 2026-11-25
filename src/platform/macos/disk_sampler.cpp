@@ -8,7 +8,7 @@
 #include <cstdint>
 #include <optional>
 
-namespace realmem {
+namespace simon {
 
 namespace {
 
@@ -69,4 +69,4 @@ DiskInfo MacDiskSampler::sample() {
   return disk;
 }
 
-}  // namespace realmem
+}  // namespace simon

@@ -8,7 +8,7 @@
 #include <stdexcept>
 #include <unordered_map>
 
-namespace realmem {
+namespace simon {
 
 namespace {
 
@@ -177,4 +177,4 @@ std::string derive_group_name(const ProcessRecord& proc,
   return GroupAggregator(custom_rules).aggregate({&proc}).front().name;
 }
 
-}  // namespace realmem
+}  // namespace simon

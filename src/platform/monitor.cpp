@@ -11,7 +11,7 @@
 #include <chrono>
 #include <thread>
 
-namespace realmem {
+namespace simon {
 
 SampleRequest build_sample_request(const Config& cfg, std::optional<pid_t> self_pid) {
   SampleRequest req;
@@ -102,4 +102,4 @@ SystemMonitor create_macos_monitor() {
                        std::move(telemetry));
 }
 
-}  // namespace realmem
+}  // namespace simon

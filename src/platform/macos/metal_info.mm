@@ -2,7 +2,7 @@
 
 #import <Metal/Metal.h>
 
-namespace realmem {
+namespace simon {
 
 MetalDeviceInfo query_metal_device_info() {
   MetalDeviceInfo info;
@@ -18,4 +18,4 @@ MetalDeviceInfo query_metal_device_info() {
   return info;
 }
 
-}  // namespace realmem
+}  // namespace simon

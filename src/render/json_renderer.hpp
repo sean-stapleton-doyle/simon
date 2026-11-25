@@ -2,7 +2,7 @@
 
 #include "render/renderer.hpp"
 
-namespace realmem {
+namespace simon {
 
 class JsonRenderer final : public IRenderer {
  public:
@@ -12,4 +12,4 @@ class JsonRenderer final : public IRenderer {
                      const RenderContext& ctx) const override;
 };
 
-}  // namespace realmem
+}  // namespace simon

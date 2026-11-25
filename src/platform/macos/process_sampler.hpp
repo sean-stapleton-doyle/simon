@@ -8,7 +8,7 @@
 #include <string_view>
 #include <vector>
 
-namespace realmem {
+namespace simon {
 
 // Replaces ASCII control characters (newlines, tabs, etc.) with spaces.
 std::string sanitize_cmdline(std::string_view raw);
@@ -32,4 +32,4 @@ class MacProcessSampler final : public IProcessSampler {
   std::vector<char> arg_scratch_;
 };
 
-}  // namespace realmem
+}  // namespace simon

@@ -9,7 +9,7 @@
 #include <string>
 #include <string_view>
 
-namespace realmem {
+namespace simon {
 
 // Formats byte counts in binary units (B, K, M, G, T) with one decimal place.
 std::string humanize_bytes(std::uint64_t bytes);
@@ -35,4 +35,4 @@ std::string_view pressure_label(MemoryPressureLevel level);
 std::string format_row_label(const DisplayRow& row, const Config& cfg);
 std::string format_summary_line(const QuerySummary& summary, const Config& cfg);
 
-}  // namespace realmem
+}  // namespace simon

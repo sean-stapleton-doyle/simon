@@ -7,7 +7,7 @@
 #include <memory>
 #include <string>
 
-namespace realmem {
+namespace simon {
 
 struct RenderContext {
   int width = 120;
@@ -32,4 +32,4 @@ std::string render_output(const QuerySummary& summary,
                           const Config& cfg,
                           const RenderContext& ctx);
 
-}  // namespace realmem
+}  // namespace simon

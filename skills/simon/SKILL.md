@@ -1,11 +1,11 @@
 ---
-name: realmem
-description: Measure true macOS process, GPU, swap, Apple Silicon CPU tier, and disk usage using `realmem` (`phys_footprint` instead of RSS). Use when diagnosing high RAM usage, swap thrashing, memory leaks, Metal/GPU headroom, or comparing memory costs across apps, process trees, and ML/LLM runs on macOS.
+name: simon
+description: Measure true macOS process, GPU, swap, Apple Silicon CPU tier, and disk usage using `simon` (`phys_footprint` instead of RSS). Use when diagnosing high RAM usage, swap thrashing, memory leaks, Metal/GPU headroom, or comparing memory costs across apps, process trees, and ML/LLM runs on macOS.
 ---
 
-# realmem — Accurate macOS Memory & Apple Silicon ML Inspection
+# simon — Silicon Monitor (Accurate macOS Memory & Apple Silicon ML Inspection)
 
-Use `realmem` instead of `ps`, `top`, or `htop` when investigating memory or ML/LLM workloads on macOS. Those tools report RSS (which double-counts shared frameworks, misses IOKit/GPU allocations, and distorts compressed memory) and obscure Apple Silicon core tiers, swap pressure, and Metal GPU limits.
+Use `simon` instead of `ps`, `top`, or `htop` when investigating memory or ML/LLM workloads on macOS. Those tools report RSS (which double-counts shared frameworks, misses IOKit/GPU allocations, and distorts compressed memory) and obscure Apple Silicon core tiers, swap pressure, and Metal GPU limits.
 
 ## Preferred Commands for Agents
 
@@ -13,28 +13,28 @@ Always pass `--output json` (or `-o json`) so output is machine-parseable with e
 
 ```sh
 # Top 20 processes + host memory, compression ratio, swap, pressure, and GPU headroom
-realmem -o json
+simon -o json
 
 # Roll up helpers/renderers by macOS .app bundle
-realmem -g -o json
+simon -g -o json
 
 # Parent/child process tree with rolled-up subtree footprints (ideal for uv/python + DataLoader workers)
-realmem -t -o json
+simon -t -o json
 
 # Include opt-in Apple Silicon CPU tiers (Super/Performance/Efficiency), power watts, and disk I/O
-realmem --cpu --disk -o json
+simon --cpu --disk -o json
 
 # Filter by extended regex over full command lines (add -c for case-sensitive)
-realmem 'python|llama|mlx' -l -o json
+simon 'python|llama|mlx' -l -o json
 
 # Compact total for matching processes only (lowest token usage)
-realmem python --sum -o json
+simon python --sum -o json
 
 # Sort by peak, gpu, cpu, disk, name, pid, or count (with -g)
-realmem -s peak -o json -n 15
+simon -s peak -o json -n 15
 
 # Include per-process GPU memory column (requires sudo; shows null where denied)
-sudo realmem --gpu -s gpu -o json -n 15
+sudo simon --gpu -s gpu -o json -n 15
 ```
 
 *(Note: `-w` / `--watch` launches an interactive read-only FTXUI TUI for humans—never pass `-w` in non-interactive agent shells.)*

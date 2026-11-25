@@ -37,7 +37,7 @@ void expect(bool cond, const char* expr, int line) {
 #define EXPECT(expr) expect((expr), #expr, __LINE__)
 
 void test_humanize_and_utf8() {
-  using namespace realmem;
+  using namespace simon;
   EXPECT(humanize_bytes(0) == "0.0B");
   EXPECT(humanize_bytes(1024) == "1.0K");
   EXPECT(humanize_bytes(1536 * 1024) == "1.5M");
@@ -53,7 +53,7 @@ void test_humanize_and_utf8() {
 }
 
 void test_graphics_ledger_and_pressure() {
-  using namespace realmem;
+  using namespace simon;
   EXPECT(combine_graphics_ledger(100, 50) == 150);
   EXPECT(combine_graphics_ledger(-42, 100) == 100);
   EXPECT(parse_pressure_level(1) == MemoryPressureLevel::Normal);
@@ -75,7 +75,7 @@ void test_graphics_ledger_and_pressure() {
 }
 
 void test_toml_loading_and_precedence() {
-  using namespace realmem;
+  using namespace simon;
 
   Config cfg;
   load_toml_string(R"(
@@ -113,14 +113,14 @@ void test_toml_loading_and_precedence() {
 
   // CLI -t overrides TOML group=true cleanly.
   namespace fs = std::filesystem;
-  const fs::path tmp = fs::temp_directory_path() / "realmem_test_config.toml";
+  const fs::path tmp = fs::temp_directory_path() / "simon_test_config.toml";
   {
     std::ofstream f(tmp);
     f << "count = 50\nsort = \"peak\"\ngroup = true\ngpu = true\n";
   }
 
   const std::string cfg_path = tmp.string();
-  const char* argv[] = {"realmem", "--config", cfg_path.c_str(), "-t", "-n", "12", "--no-gpu"};
+  const char* argv[] = {"simon", "--config", cfg_path.c_str(), "-t", "-n", "12", "--no-gpu"};
   const ParseResult res = parse_args_and_config(7, argv);
   fs::remove(tmp);
 
@@ -132,37 +132,37 @@ void test_toml_loading_and_precedence() {
 }
 
 void test_cli_validation() {
-  using namespace realmem;
+  using namespace simon;
 
   // -g and -t together must fail.
-  const char* argv_gt[] = {"realmem", "--no-config", "-g", "-t"};
+  const char* argv_gt[] = {"simon", "--no-config", "-g", "-t"};
   const ParseResult r_gt = parse_args_and_config(4, argv_gt);
   EXPECT(r_gt.should_exit && r_gt.exit_code == 2);
 
   // --sort gpu enables --gpu automatically.
-  const char* argv_gpu[] = {"realmem", "--no-config", "--sort", "gpu"};
+  const char* argv_gpu[] = {"simon", "--no-config", "--sort", "gpu"};
   const ParseResult r_gpu = parse_args_and_config(4, argv_gpu);
   EXPECT(!r_gpu.should_exit && r_gpu.config.show_gpu);
 
   // --sort cpu enables --cpu automatically.
-  const char* argv_cpu[] = {"realmem", "--no-config", "--sort", "cpu"};
+  const char* argv_cpu[] = {"simon", "--no-config", "--sort", "cpu"};
   const ParseResult r_cpu = parse_args_and_config(4, argv_cpu);
   EXPECT(!r_cpu.should_exit && r_cpu.config.show_cpu);
 
   // --sum without regex must fail.
-  const char* argv_sum[] = {"realmem", "--no-config", "--sum"};
+  const char* argv_sum[] = {"simon", "--no-config", "--sum"};
   const ParseResult r_sum = parse_args_and_config(3, argv_sum);
   EXPECT(r_sum.should_exit && r_sum.exit_code == 2);
 
   // --skill prints embedded SKILL.md.
-  const char* argv_skill[] = {"realmem", "--skill"};
+  const char* argv_skill[] = {"simon", "--skill"};
   const ParseResult r_skill = parse_args_and_config(2, argv_skill);
   EXPECT(r_skill.should_exit && r_skill.exit_code == 0);
-  EXPECT(r_skill.message.find("name: realmem") != std::string::npos);
+  EXPECT(r_skill.message.find("name: simon") != std::string::npos);
 }
 
 void test_process_tree_and_rollup() {
-  using namespace realmem;
+  using namespace simon;
 
   ProcessSnapshot snap;
   snap.total_pids = 4;
@@ -213,7 +213,7 @@ void test_process_tree_and_rollup() {
 }
 
 void test_grouping_and_delta_calculator() {
-  using namespace realmem;
+  using namespace simon;
 
   ProcessRecord chrome1;
   chrome1.pid = 101; chrome1.footprint = 500; chrome1.lifetime_max = 900;
@@ -267,7 +267,7 @@ void test_grouping_and_delta_calculator() {
 }
 
 void test_rendering_all_formats() {
-  using namespace realmem;
+  using namespace simon;
   using json = nlohmann::json;
 
   SystemSnapshot snap;
@@ -336,25 +336,25 @@ void test_rendering_all_formats() {
 }
 
 void test_config_discovery() {
-  using namespace realmem;
+  using namespace simon;
   namespace fs = std::filesystem;
 
-  const fs::path base = fs::temp_directory_path() / "realmem_test_home_m1";
+  const fs::path base = fs::temp_directory_path() / "simon_test_home_m1";
   fs::remove_all(base);
-  fs::create_directories(base / ".config" / "realmem");
+  fs::create_directories(base / ".config" / "simon");
 
-  const fs::path dotfile = base / ".realmem.toml";
+  const fs::path dotfile = base / ".simon.toml";
   { std::ofstream f(dotfile); f << "count = 10\n"; }
   EXPECT(discover_config_path("", base.c_str()) == dotfile);
 
-  const fs::path xdg = base / ".config" / "realmem" / "config.toml";
+  const fs::path xdg = base / ".config" / "simon" / "config.toml";
   { std::ofstream f(xdg); f << "count = 15\n"; }
   EXPECT(discover_config_path("", base.c_str()) == xdg);
   fs::remove_all(base);
 }
 
 void test_ioreport_energy_and_monitor_facade() {
-  using namespace realmem;
+  using namespace simon;
   using json = nlohmann::json;
 
   EXPECT(std::abs(energy_delta_to_watts(500, "mJ", 0.5) - 1.0) < 0.001);
@@ -445,7 +445,7 @@ void test_ioreport_energy_and_monitor_facade() {
 }
 
 void test_tui_state_and_sparklines() {
-  using namespace realmem;
+  using namespace simon;
 
   const std::deque<double> series = {0.0, 50.0, 100.0};
   const std::string spark = render_sparkline(series, 3, 100.0);

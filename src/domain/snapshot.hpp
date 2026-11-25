@@ -9,7 +9,7 @@
 #include <string>
 #include <vector>
 
-namespace realmem {
+namespace simon {
 
 enum class MemoryPressureLevel {
   Unknown,
@@ -162,4 +162,4 @@ struct SystemSnapshot {
   TelemetryInfo telemetry;
 };
 
-}  // namespace realmem
+}  // namespace simon

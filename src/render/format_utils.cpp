@@ -4,7 +4,7 @@
 #include <array>
 #include <format>
 
-namespace realmem {
+namespace simon {
 
 std::string humanize_bytes(std::uint64_t bytes) {
   static constexpr std::array<const char*, 5> kUnits = {"B", "K", "M", "G", "T"};
@@ -161,4 +161,4 @@ std::string format_summary_line(const QuerySummary& summary, const Config& cfg) 
   return line;
 }
 
-}  // namespace realmem
+}  // namespace simon

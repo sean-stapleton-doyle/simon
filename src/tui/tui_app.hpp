@@ -3,9 +3,9 @@
 #include "config/config.hpp"
 #include "platform/monitor.hpp"
 
-namespace realmem {
+namespace simon {
 
-// Read-only interactive FTXUI live monitor (`realmem -w`).
+// Read-only interactive FTXUI live monitor (`simon -w`).
 class TuiApp {
  public:
   TuiApp(SystemMonitor& monitor, const Config& initial_cfg);
@@ -17,4 +17,4 @@ class TuiApp {
   Config initial_cfg_;
 };
 
-}  // namespace realmem
+}  // namespace simon

@@ -3,7 +3,7 @@
 #include <chrono>
 #include <unordered_map>
 
-namespace realmem {
+namespace simon {
 
 namespace {
 
@@ -90,4 +90,4 @@ void DeltaCalculator::apply(const SystemSnapshot& prev, SystemSnapshot& curr) {
   apply_memory_deltas(prev.memory, curr.memory, dt_sec);
 }
 
-}  // namespace realmem
+}  // namespace simon

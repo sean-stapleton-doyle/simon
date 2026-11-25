@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(realmem VERSION 1.0.0 LANGUAGES CXX OBJCXX)
+project(simon VERSION 1.0.1 LANGUAGES CXX OBJCXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -57,12 +57,12 @@ FetchContent_Declare(
 
 FetchContent_MakeAvailable(ftxui cli11 tomlplusplus nlohmann_json)
 
-# Embed skills/realmem/SKILL.md directly into the binary for `realmem --skill`.
-file(READ "${CMAKE_CURRENT_SOURCE_DIR}/skills/realmem/SKILL.md" REALMEM_SKILL_CONTENT)
+# Embed skills/simon/SKILL.md directly into the binary for `simon --skill`.
+file(READ "${CMAKE_CURRENT_SOURCE_DIR}/skills/simon/SKILL.md" SIMON_SKILL_CONTENT)
 set_property(
   DIRECTORY
   APPEND
-  PROPERTY CMAKE_CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/skills/realmem/SKILL.md"
+  PROPERTY CMAKE_CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/skills/simon/SKILL.md"
 )
 configure_file(
   "${CMAKE_CURRENT_SOURCE_DIR}/src/skill_doc.hpp.in"
@@ -70,7 +70,7 @@ configure_file(
   @ONLY
 )
 
-add_library(realmem_core STATIC
+add_library(simon_core STATIC
   src/config/config.cpp
   src/domain/delta.cpp
   src/domain/grouping.cpp
@@ -93,12 +93,12 @@ add_library(realmem_core STATIC
   src/tui/tui_state.cpp
 )
 
-target_include_directories(realmem_core PUBLIC
+target_include_directories(simon_core PUBLIC
   ${CMAKE_CURRENT_SOURCE_DIR}/src
   ${CMAKE_CURRENT_BINARY_DIR}/generated
 )
 
-target_link_libraries(realmem_core PUBLIC
+target_link_libraries(simon_core PUBLIC
   ftxui::component
   ftxui::dom
   ftxui::screen
@@ -112,7 +112,7 @@ target_link_libraries(realmem_core PUBLIC
   "-framework Metal"
 )
 
-target_compile_options(realmem_core PRIVATE
+target_compile_options(simon_core PRIVATE
   -Wall
   -Wextra
   -Wpedantic
@@ -124,14 +124,14 @@ set_source_files_properties(
   PROPERTIES COMPILE_OPTIONS "-fblocks;-Wno-gnu-statement-expression"
 )
 
-add_executable(realmem src/main.cpp)
-target_link_libraries(realmem PRIVATE realmem_core)
-target_compile_options(realmem PRIVATE -Wall -Wextra -Wpedantic)
+add_executable(simon src/main.cpp)
+target_link_libraries(simon PRIVATE simon_core)
+target_compile_options(simon PRIVATE -Wall -Wextra -Wpedantic)
 
 include(CTest)
 if(BUILD_TESTING)
-  add_executable(realmem_tests tests/test_main.cpp)
-  target_link_libraries(realmem_tests PRIVATE realmem_core)
-  target_compile_options(realmem_tests PRIVATE -Wall -Wextra -Wpedantic)
-  add_test(NAME realmem_tests COMMAND realmem_tests)
+  add_executable(simon_tests tests/test_main.cpp)
+  target_link_libraries(simon_tests PRIVATE simon_core)
+  target_compile_options(simon_tests PRIVATE -Wall -Wextra -Wpedantic)
+  add_test(NAME simon_tests COMMAND simon_tests)
 endif()

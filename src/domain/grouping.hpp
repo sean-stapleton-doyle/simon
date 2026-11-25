@@ -9,7 +9,7 @@
 #include <string_view>
 #include <vector>
 
-namespace realmem {
+namespace simon {
 
 struct DisplayRow;
 
@@ -54,4 +54,4 @@ class GroupAggregator {
   std::vector<CompiledRule> rules_;
 };
 
-}  // namespace realmem
+}  // namespace simon

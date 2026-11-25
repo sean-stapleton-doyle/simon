@@ -1,5 +1,5 @@
 BUILD   := build
-BIN     := $(BUILD)/realmem
+BIN     := $(BUILD)/simon
 PREFIX  ?= $(HOME)/.local
 CMAKE   ?= cmake
 GEN     ?= Ninja
@@ -24,11 +24,11 @@ test: build
 # Symlink rather than copy, so `make` alone refreshes what's on PATH.
 install: build
 	mkdir -p $(PREFIX)/bin
-	ln -sf $(abspath $(BIN)) $(PREFIX)/bin/realmem
-	@echo "linked $(PREFIX)/bin/realmem -> $(abspath $(BIN))"
+	ln -sf $(abspath $(BIN)) $(PREFIX)/bin/simon
+	@echo "linked $(PREFIX)/bin/simon -> $(abspath $(BIN))"
 
 uninstall:
-	rm -f $(PREFIX)/bin/realmem
+	rm -f $(PREFIX)/bin/simon
 
 run: build
 	@$(BIN)

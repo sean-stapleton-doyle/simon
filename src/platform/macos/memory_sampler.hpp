@@ -2,7 +2,7 @@
 
 #include "platform/samplers.hpp"
 
-namespace realmem {
+namespace simon {
 
 // Maps kern.memorystatus_vm_pressure_level integer (1, 2, 4) to enum.
 MemoryPressureLevel parse_pressure_level(int raw);
@@ -12,4 +12,4 @@ class MacMemorySampler final : public IMemorySampler {
   SystemMemory sample() override;
 };
 
-}  // namespace realmem
+}  // namespace simon

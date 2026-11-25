@@ -11,7 +11,7 @@
 #include <iostream>
 
 int main(int argc, char** argv) {
-  using namespace realmem;
+  using namespace simon;
 
   const ParseResult parsed = parse_args_and_config(argc, argv);
   if (parsed.should_exit) {
@@ -44,7 +44,7 @@ int main(int argc, char** argv) {
     std::cout << render_output(summary, snap, cfg, ctx);
     return 0;
   } catch (const std::exception& err) {
-    std::cerr << "realmem: " << err.what() << '\n';
+    std::cerr << "simon: " << err.what() << '\n';
     return 1;
   }
 }

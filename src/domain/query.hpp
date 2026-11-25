@@ -9,7 +9,7 @@
 #include <string>
 #include <vector>
 
-namespace realmem {
+namespace simon {
 
 struct DisplayRow {
   pid_t pid = 0;
@@ -67,4 +67,4 @@ class QueryEngine {
   static QuerySummary run(const ProcessSnapshot& snap, const Config& cfg);
 };
 
-}  // namespace realmem
+}  // namespace simon

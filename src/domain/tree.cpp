@@ -3,7 +3,7 @@
 #include <algorithm>
 #include <unordered_map>
 
-namespace realmem {
+namespace simon {
 
 namespace {
 
@@ -139,4 +139,4 @@ std::vector<DisplayRow> ProcessTreeBuilder::build(const std::vector<const Proces
   return out;
 }
 
-}  // namespace realmem
+}  // namespace simon

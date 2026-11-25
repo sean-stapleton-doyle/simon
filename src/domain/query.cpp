@@ -8,7 +8,7 @@
 #include <optional>
 #include <string>
 
-namespace realmem {
+namespace simon {
 
 namespace {
 
@@ -193,4 +193,4 @@ QuerySummary QueryEngine::run(const ProcessSnapshot& snap, const Config& cfg) {
   return summary;
 }
 
-}  // namespace realmem
+}  // namespace simon

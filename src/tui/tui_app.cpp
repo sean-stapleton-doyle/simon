@@ -18,7 +18,7 @@
 #include <mutex>
 #include <thread>
 
-namespace realmem {
+namespace simon {
 
 namespace {
 
@@ -30,7 +30,7 @@ ftxui::Element build_top_bar(const TuiState& state, int interval_ms) {
   const std::string arrow = state.reverse() ? "\xe2\x96\xb2" : "\xe2\x96\xbc";  // ▲ / ▼
 
   Elements items;
-  items.push_back(text(" realmem ") | bold | inverted);
+  items.push_back(text(" simon ") | bold | inverted);
   if (!chip.empty()) {
     items.push_back(text(" " + chip + " ") | color(Color::Cyan));
   }
@@ -389,4 +389,4 @@ int TuiApp::run() {
   return 0;
 }
 
-}  // namespace realmem
+}  // namespace simon

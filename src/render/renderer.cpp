@@ -4,7 +4,7 @@
 #include "render/plain_renderer.hpp"
 #include "render/table_renderer.hpp"
 
-namespace realmem {
+namespace simon {
 
 namespace {
 
@@ -45,4 +45,4 @@ std::string render_output(const QuerySummary& summary,
   return make_renderer(cfg, ctx)->render(summary, snap, cfg, ctx);
 }
 
-}  // namespace realmem
+}  // namespace simon

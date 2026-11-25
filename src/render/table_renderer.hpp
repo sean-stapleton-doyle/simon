@@ -4,7 +4,7 @@
 
 #include <ftxui/dom/elements.hpp>
 
-namespace realmem {
+namespace simon {
 
 // Reusable FTXUI widgets shared between one-shot TableRenderer and live TuiApp.
 ftxui::Element build_memory_stacked_bar(const SystemMemory& sys, int bar_width);
@@ -20,4 +20,4 @@ class TableRenderer final : public IRenderer {
                      const RenderContext& ctx) const override;
 };
 
-}  // namespace realmem
+}  // namespace simon

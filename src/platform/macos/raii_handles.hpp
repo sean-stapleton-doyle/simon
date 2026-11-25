@@ -4,7 +4,7 @@
 #include <IOKit/IOKitLib.h>
 #include <mach/mach.h>
 
-namespace realmem {
+namespace simon {
 
 class MachPortGuard {
  public:
@@ -84,4 +84,4 @@ class CfTypeGuard {
   CFTypeRef ref_ = nullptr;
 };
 
-}  // namespace realmem
+}  // namespace simon

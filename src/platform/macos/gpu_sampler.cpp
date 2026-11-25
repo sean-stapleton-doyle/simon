@@ -9,7 +9,7 @@
 
 #include <algorithm>
 
-namespace realmem {
+namespace simon {
 
 namespace {
 
@@ -176,4 +176,4 @@ std::optional<std::uint64_t> MacGpuSampler::sample_process(pid_t pid) {
                                  vm.ledger_tag_graphics_footprint_compressed);
 }
 
-}  // namespace realmem
+}  // namespace simon

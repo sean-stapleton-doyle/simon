@@ -5,7 +5,7 @@
 #include <mach/mach.h>
 #include <sys/sysctl.h>
 
-namespace realmem {
+namespace simon {
 
 namespace {
 
@@ -106,4 +106,4 @@ SystemMemory MacMemorySampler::sample() {
   return sys;
 }
 
-}  // namespace realmem
+}  // namespace simon

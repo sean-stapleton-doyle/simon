@@ -6,7 +6,7 @@
 
 #include <optional>
 
-namespace realmem {
+namespace simon {
 
 struct SampleRequest {
   bool need_cmdline = false;
@@ -58,4 +58,4 @@ class ITelemetrySampler {
   virtual void sample_into(CpuInfo& cpu, GpuInfo& gpu, TelemetryInfo& telemetry) = 0;
 };
 
-}  // namespace realmem
+}  // namespace simon

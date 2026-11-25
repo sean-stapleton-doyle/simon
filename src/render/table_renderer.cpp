@@ -10,7 +10,7 @@
 #include <cmath>
 #include <format>
 
-namespace realmem {
+namespace simon {
 
 namespace {
 
@@ -463,4 +463,4 @@ std::string TableRenderer::render(const QuerySummary& summary,
   return out;
 }
 
-}  // namespace realmem
+}  // namespace simon

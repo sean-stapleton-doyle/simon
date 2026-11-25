@@ -13,7 +13,7 @@
 #include <sstream>
 #include <stdexcept>
 
-namespace realmem {
+namespace simon {
 
 namespace {
 
@@ -313,7 +313,7 @@ void apply_implicit_columns(const CliValues& cli, Config& cfg) {
 }
 
 ParseResult make_error(std::string_view msg, int code = 2) {
-  return ParseResult{{}, code, true, std::format("realmem: {}\n", msg)};
+  return ParseResult{{}, code, true, std::format("simon: {}\n", msg)};
 }
 
 }  // namespace
@@ -387,7 +387,7 @@ std::optional<std::filesystem::path> discover_config_path(const char* xdg_config
 
   const char* xdg = xdg_config_home ? xdg_config_home : std::getenv("XDG_CONFIG_HOME");
   if (xdg && xdg[0] != '\0') {
-    fs::path p = fs::path(xdg) / "realmem" / "config.toml";
+    fs::path p = fs::path(xdg) / "simon" / "config.toml";
     std::error_code ec;
     if (fs::is_regular_file(p, ec)) {
       return p;
@@ -397,11 +397,11 @@ std::optional<std::filesystem::path> discover_config_path(const char* xdg_config
   const char* home_dir = home ? home : std::getenv("HOME");
   if (home_dir && home_dir[0] != '\0') {
     std::error_code ec;
-    fs::path xdg_default = fs::path(home_dir) / ".config" / "realmem" / "config.toml";
+    fs::path xdg_default = fs::path(home_dir) / ".config" / "simon" / "config.toml";
     if (fs::is_regular_file(xdg_default, ec)) {
       return xdg_default;
     }
-    fs::path dotfile = fs::path(home_dir) / ".realmem.toml";
+    fs::path dotfile = fs::path(home_dir) / ".simon.toml";
     if (fs::is_regular_file(dotfile, ec)) {
       return dotfile;
     }
@@ -461,14 +461,14 @@ ParseResult parse_args_and_config(int argc, const char* const* argv) {
       "Unlike RSS, phys_footprint excludes the reclaimable OS file cache."};
   app.footer(
       "\nA bare positional argument is a row count if all digits, otherwise an extended regex.\n"
-      "Defaults can be configured in ~/.config/realmem/config.toml or ~/.realmem.toml.\n\n"
+      "Defaults can be configured in ~/.config/simon/config.toml or ~/.simon.toml.\n\n"
       "Examples:\n"
-      "  realmem                 top 20 processes\n"
-      "  realmem -g              group helpers by application\n"
-      "  realmem -t              parent/child process tree with rolled-up footprints\n"
-      "  realmem -w              live read-only TUI monitor\n"
-      "  realmem -o json         machine-readable JSON output\n"
-      "  sudo realmem --gpu      include per-process GPU memory column");
+      "  simon                 top 20 processes\n"
+      "  simon -g              group helpers by application\n"
+      "  simon -t              parent/child process tree with rolled-up footprints\n"
+      "  simon -w              live read-only TUI monitor\n"
+      "  simon -o json         machine-readable JSON output\n"
+      "  sudo simon --gpu      include per-process GPU memory column");
 
   CliValues cli;
   register_cli_options(app, cli);
@@ -479,7 +479,7 @@ ParseResult parse_args_and_config(int argc, const char* const* argv) {
     return ParseResult{{}, 0, true, app.help()};
   } catch (const CLI::ParseError& e) {
     return ParseResult{
-        {}, 2, true, std::format("realmem: {}\nRun 'realmem --help' for usage.\n", e.what())};
+        {}, 2, true, std::format("simon: {}\nRun 'simon --help' for usage.\n", e.what())};
   }
 
   if (cli.print_skill) {
@@ -503,4 +503,4 @@ ParseResult parse_args_and_config(int argc, const char* const* argv) {
   return ParseResult{std::move(cfg), 0, false, {}};
 }
 
-}  // namespace realmem
+}  // namespace simon

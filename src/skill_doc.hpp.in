@@ -2,9 +2,9 @@
 
 #include <string_view>
 
-namespace realmem {
+namespace simon {
 
 inline constexpr std::string_view kSkillDocument =
-    R"REALMEM_SKILL(@REALMEM_SKILL_CONTENT@)REALMEM_SKILL";
+    R"SIMON_SKILL(@SIMON_SKILL_CONTENT@)SIMON_SKILL";
 
-}  // namespace realmem
+}  // namespace simon

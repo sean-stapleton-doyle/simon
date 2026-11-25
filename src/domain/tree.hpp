@@ -6,7 +6,7 @@
 
 #include <vector>
 
-namespace realmem {
+namespace simon {
 
 // Builds a parent/child process forest with bottom-up rolled-up subtree footprints,
 // sorts siblings at every level, and flattens into indented DisplayRows.
@@ -17,4 +17,4 @@ class ProcessTreeBuilder {
                                        bool reverse);
 };
 
-}  // namespace realmem
+}  // namespace simon
