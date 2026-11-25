@@ -12,6 +12,8 @@ enum class SortField {
   Footprint,
   Peak,
   Gpu,
+  Cpu,
+  Disk,
   Pid,
   Name,
   Count,
@@ -40,8 +42,14 @@ struct Config {
   SortField sort = SortField::Footprint;
   bool reverse = false;
   bool group = false;
+  bool tree = false;
   bool long_format = false;
   bool show_gpu = false;
+  bool show_cpu = false;
+  bool show_disk = false;
+  bool watch = false;
+  int interval_ms = 1000;  // TUI refresh interval
+  int sample_ms = 250;     // one-shot delta sample window for --cpu/--disk
   bool case_sensitive = false;
   bool sum_only = false;
   bool show_bars = true;

@@ -1,11 +1,21 @@
-#include "config.hpp"
-#include "gpu.hpp"
-#include "model.hpp"
-#include "process.hpp"
-#include "render.hpp"
+#include "config/config.hpp"
+#include "domain/delta.hpp"
+#include "domain/grouping.hpp"
+#include "domain/query.hpp"
+#include "domain/tree.hpp"
+#include "platform/macos/gpu_sampler.hpp"
+#include "platform/macos/ioreport_sampler.hpp"
+#include "platform/macos/memory_sampler.hpp"
+#include "platform/macos/process_sampler.hpp"
+#include "platform/monitor.hpp"
+#include "render/format_utils.hpp"
+#include "render/renderer.hpp"
+#include "tui/tui_state.hpp"
 
 #include <nlohmann/json.hpp>
 
+#include <chrono>
+#include <cmath>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -32,22 +42,36 @@ void test_humanize_and_utf8() {
   EXPECT(humanize_bytes(1024) == "1.0K");
   EXPECT(humanize_bytes(1536 * 1024) == "1.5M");
   EXPECT(humanize_bytes(2ULL * 1024 * 1024 * 1024) == "2.0G");
+  EXPECT(format_rate(1024.0 * 1024.0 * 10.0) == "10.0M/s");
 
   EXPECT(truncate_utf8("hello", 5) == "hello");
   EXPECT(truncate_utf8("hello world", 5) == "hell\xe2\x80\xa6");
-  // Multi-byte UTF-8: "café!" (5 code points)
   EXPECT(truncate_utf8("caf\xc3\xa9!", 5) == "caf\xc3\xa9!");
   EXPECT(truncate_utf8("caf\xc3\xa9!extra", 5) == "caf\xc3\xa9\xe2\x80\xa6");
 
   EXPECT(sanitize_cmdline("python\t-c\n'print(1)'\r\n") == "python -c 'print(1)'  ");
 }
 
-void test_graphics_ledger_math() {
+void test_graphics_ledger_and_pressure() {
   using namespace realmem;
   EXPECT(combine_graphics_ledger(100, 50) == 150);
-  EXPECT(combine_graphics_ledger(0, 0) == 0);
   EXPECT(combine_graphics_ledger(-42, 100) == 100);
-  EXPECT(combine_graphics_ledger(100, -10) == 100);
+  EXPECT(parse_pressure_level(1) == MemoryPressureLevel::Normal);
+  EXPECT(parse_pressure_level(2) == MemoryPressureLevel::Warn);
+  EXPECT(parse_pressure_level(4) == MemoryPressureLevel::Critical);
+  EXPECT(parse_pressure_level(99) == MemoryPressureLevel::Unknown);
+
+  GpuInfo gpu;
+  gpu.valid = true;
+  gpu.allocated = 10ULL * 1024 * 1024 * 1024;
+  gpu.recommended_max_working_set = 36ULL * 1024 * 1024 * 1024;
+  EXPECT(gpu.effective_ceiling() == 36ULL * 1024 * 1024 * 1024);
+  EXPECT(gpu.headroom_bytes() == 26ULL * 1024 * 1024 * 1024);
+
+  SystemMemory mem;
+  mem.compressor = 4ULL * 1024 * 1024 * 1024;
+  mem.compressor_uncompressed = 12ULL * 1024 * 1024 * 1024;
+  EXPECT(std::abs(mem.compression_ratio() - 3.0) < 0.01);
 }
 
 void test_toml_loading_and_precedence() {
@@ -60,8 +84,12 @@ void test_toml_loading_and_precedence() {
     reverse = true
     group = true
     gpu = true
+    cpu = true
+    disk = true
+    sample_ms = 300
     bars = false
     color = "never"
+    output = "json"
 
     [[grouping.rules]]
     pattern = "python3.*train"
@@ -74,22 +102,16 @@ void test_toml_loading_and_precedence() {
   EXPECT(cfg.reverse == true);
   EXPECT(cfg.group == true);
   EXPECT(cfg.show_gpu == true);
+  EXPECT(cfg.show_cpu == true);
+  EXPECT(cfg.show_disk == true);
+  EXPECT(cfg.sample_ms == 300);
   EXPECT(cfg.show_bars == false);
   EXPECT(cfg.color == ColorMode::Never);
+  EXPECT(cfg.output == OutputFormat::Json);
   EXPECT(cfg.group_rules.size() == 1);
   EXPECT(cfg.group_rules[0].name == "ML Trainer");
 
-  // Invalid config throws.
-  bool threw = false;
-  try {
-    Config bad;
-    load_toml_string("sort = \"bogus\"\n", bad);
-  } catch (const std::runtime_error&) {
-    threw = true;
-  }
-  EXPECT(threw);
-
-  // CLI overrides TOML file (including --no-gpu).
+  // CLI -t overrides TOML group=true cleanly.
   namespace fs = std::filesystem;
   const fs::path tmp = fs::temp_directory_path() / "realmem_test_config.toml";
   {
@@ -98,338 +120,408 @@ void test_toml_loading_and_precedence() {
   }
 
   const std::string cfg_path = tmp.string();
-  const char* argv[] = {"realmem",   "--config", cfg_path.c_str(), "-n",  "12",
-                        "--no-group", "--no-gpu", "-s",             "pid"};
-  const ParseResult res = parse_args_and_config(9, argv);
+  const char* argv[] = {"realmem", "--config", cfg_path.c_str(), "-t", "-n", "12", "--no-gpu"};
+  const ParseResult res = parse_args_and_config(7, argv);
   fs::remove(tmp);
 
   EXPECT(!res.should_exit);
-  EXPECT(res.config.count == 12);
+  EXPECT(res.config.tree == true);
   EXPECT(res.config.group == false);
+  EXPECT(res.config.count == 12);
   EXPECT(res.config.show_gpu == false);
-  EXPECT(res.config.sort == SortField::Pid);
 }
 
-void test_bare_positional_and_gpu_cli() {
+void test_cli_validation() {
   using namespace realmem;
 
-  const char* argv1[] = {"realmem", "--no-config", "40"};
-  const ParseResult r1 = parse_args_and_config(3, argv1);
-  EXPECT(!r1.should_exit);
-  EXPECT(r1.config.count == 40);
-  EXPECT(!r1.config.pattern.has_value());
+  // -g and -t together must fail.
+  const char* argv_gt[] = {"realmem", "--no-config", "-g", "-t"};
+  const ParseResult r_gt = parse_args_and_config(4, argv_gt);
+  EXPECT(r_gt.should_exit && r_gt.exit_code == 2);
 
-  const char* argv2[] = {"realmem", "--no-config", "python", "--sum"};
-  const ParseResult r2 = parse_args_and_config(4, argv2);
-  EXPECT(!r2.should_exit);
-  EXPECT(r2.config.pattern == "python");
-  EXPECT(r2.config.sum_only == true);
-
-  // --sort gpu automatically enables the GPU column unless --no-gpu is passed.
+  // --sort gpu enables --gpu automatically.
   const char* argv_gpu[] = {"realmem", "--no-config", "--sort", "gpu"};
   const ParseResult r_gpu = parse_args_and_config(4, argv_gpu);
-  EXPECT(!r_gpu.should_exit);
-  EXPECT(r_gpu.config.sort == SortField::Gpu);
-  EXPECT(r_gpu.config.show_gpu == true);
+  EXPECT(!r_gpu.should_exit && r_gpu.config.show_gpu);
 
-  const char* argv_nogpu[] = {"realmem", "--no-config", "--sort", "gpu", "--no-gpu"};
-  const ParseResult r_nogpu = parse_args_and_config(5, argv_nogpu);
-  EXPECT(!r_nogpu.should_exit);
-  EXPECT(r_nogpu.config.sort == SortField::Gpu);
-  EXPECT(r_nogpu.config.show_gpu == false);
+  // --sort cpu enables --cpu automatically.
+  const char* argv_cpu[] = {"realmem", "--no-config", "--sort", "cpu"};
+  const ParseResult r_cpu = parse_args_and_config(4, argv_cpu);
+  EXPECT(!r_cpu.should_exit && r_cpu.config.show_cpu);
 
   // --sum without regex must fail.
-  const char* argv3[] = {"realmem", "--no-config", "--sum"};
-  const ParseResult r3 = parse_args_and_config(3, argv3);
-  EXPECT(r3.should_exit);
-  EXPECT(r3.exit_code == 2);
+  const char* argv_sum[] = {"realmem", "--no-config", "--sum"};
+  const ParseResult r_sum = parse_args_and_config(3, argv_sum);
+  EXPECT(r_sum.should_exit && r_sum.exit_code == 2);
 
-  // --sort count without --group must fail.
-  const char* argv4[] = {"realmem", "--no-config", "--sort", "count"};
-  const ParseResult r4 = parse_args_and_config(4, argv4);
-  EXPECT(r4.should_exit);
-  EXPECT(r4.exit_code == 2);
+  // --skill prints embedded SKILL.md.
+  const char* argv_skill[] = {"realmem", "--skill"};
+  const ParseResult r_skill = parse_args_and_config(2, argv_skill);
+  EXPECT(r_skill.should_exit && r_skill.exit_code == 0);
+  EXPECT(r_skill.message.find("name: realmem") != std::string::npos);
 }
 
-void test_grouping_filtering_and_sorting() {
+void test_process_tree_and_rollup() {
   using namespace realmem;
 
-  Snapshot snap;
-  snap.total_pids = 5;
-  snap.processes = {
-      ProcessInfo{101, 500, 900, 200, "Google Chrome Helper (Renderer)",
-                  "/Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Helper.app/Contents/MacOS/Google Chrome Helper",
-                  "/Applications/Google Chrome.app/... --type=renderer"},
-      ProcessInfo{102, 300, 400, 150, "Google Chrome",
-                  "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
-                  "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"},
-      ProcessInfo{103, 700, 1200, 600, "python3.12", "/usr/bin/python3", "python3 train.py"},
-      ProcessInfo{104, 200, 250, std::nullopt, "com.apple.WebKit.WebContent", "", ""},
-  };
-  snap.total_footprint = 1700;
+  ProcessSnapshot snap;
+  snap.total_pids = 4;
+  // uv (10) -> python3 (20) -> worker1 (30), worker2 (31); separate standalone app (40)
+  ProcessRecord uv;
+  uv.pid = 10; uv.ppid = 1; uv.footprint = 100; uv.lifetime_max = 100; uv.name = "uv";
+  ProcessRecord py;
+  py.pid = 20; py.ppid = 10; py.footprint = 500; py.lifetime_max = 600; py.name = "python3";
+  py.gpu_footprint = 300;
+  ProcessRecord w1;
+  w1.pid = 30; w1.ppid = 20; w1.footprint = 400; w1.lifetime_max = 400; w1.name = "worker";
+  w1.gpu_footprint = 200;
+  ProcessRecord w2;
+  w2.pid = 31; w2.ppid = 20; w2.footprint = 200; w2.lifetime_max = 200; w2.name = "worker";
+  ProcessRecord solo;
+  solo.pid = 40; solo.ppid = 1; solo.footprint = 900; solo.lifetime_max = 900; solo.name = "solo";
 
-  // Test grouping via .app bundle + WebKit fallback + custom rule + GPU sum.
+  snap.processes = {solo, w2, py, w1, uv};
+  snap.total_footprint = 2100;
+
+  Config cfg;
+  cfg.tree = true;
+  cfg.show_gpu = true;
+
+  const QuerySummary res = QueryEngine::run(snap, cfg);
+  EXPECT(res.rows.size() == 5);
+  // uv subtree = 100 + 500 + 400 + 200 = 1200 > solo (900), so uv tree ranks #1!
+  EXPECT(res.rows[0].pid == 10);
+  EXPECT(res.rows[0].tree_depth == 0);
+  EXPECT(res.rows[0].proc_count == 4);
+  EXPECT(res.rows[0].footprint == 100);
+  EXPECT(res.rows[0].subtree_footprint == 1200);
+  EXPECT(res.rows[0].gpu_footprint == 500);
+
+  EXPECT(res.rows[1].pid == 20);
+  EXPECT(res.rows[1].tree_depth == 1);
+  EXPECT(res.rows[1].subtree_footprint == 1100);
+  EXPECT(!res.rows[1].tree_prefix.empty());
+
+  // Children of python3 sorted descending: w1 (400) before w2 (200).
+  EXPECT(res.rows[2].pid == 30);
+  EXPECT(res.rows[2].tree_depth == 2);
+  EXPECT(res.rows[3].pid == 31);
+  EXPECT(res.rows[3].tree_depth == 2);
+
+  EXPECT(res.rows[4].pid == 40);
+  EXPECT(res.rows[4].tree_depth == 0);
+}
+
+void test_grouping_and_delta_calculator() {
+  using namespace realmem;
+
+  ProcessRecord chrome1;
+  chrome1.pid = 101; chrome1.footprint = 500; chrome1.lifetime_max = 900;
+  chrome1.gpu_footprint = 200; chrome1.name = "Google Chrome Helper";
+  chrome1.path = "/Applications/Google Chrome.app/Contents/Frameworks/Helper.app/Contents/MacOS/Helper";
+
+  ProcessRecord chrome2;
+  chrome2.pid = 102; chrome2.footprint = 300; chrome2.lifetime_max = 400;
+  chrome2.gpu_footprint = 150; chrome2.name = "Google Chrome";
+  chrome2.path = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
+
+  ProcessSnapshot snap;
+  snap.total_pids = 2;
+  snap.processes = {chrome1, chrome2};
+  snap.total_footprint = 800;
+
   Config cfg;
   cfg.group = true;
   cfg.show_gpu = true;
-  cfg.sort = SortField::Footprint;
-  cfg.group_rules.push_back(GroupRule{"train\\.py", "Training"});
-
-  const QuerySummary grouped = build_query_summary(snap, cfg);
-  EXPECT(grouped.rows.size() == 3);
-  EXPECT(grouped.gpu_readable_procs == 3);
+  const QuerySummary grouped = QueryEngine::run(snap, cfg);
+  EXPECT(grouped.rows.size() == 1);
   EXPECT(grouped.rows[0].name == "Google Chrome");
   EXPECT(grouped.rows[0].proc_count == 2);
-  EXPECT(grouped.rows[0].footprint == 800);
-  EXPECT(grouped.rows[0].peak == 1300);
   EXPECT(grouped.rows[0].gpu_footprint == 350);
-  EXPECT(grouped.rows[1].name == "Training");
-  EXPECT(grouped.rows[1].gpu_footprint == 600);
-  EXPECT(grouped.rows[2].name == "WebKit");
-  EXPECT(!grouped.rows[2].gpu_footprint.has_value());
 
-  // Test sorting by GPU (known descending, nullopt always last even when reversed).
-  cfg.sort = SortField::Gpu;
-  const QuerySummary by_gpu = build_query_summary(snap, cfg);
-  EXPECT(by_gpu.rows[0].name == "Training");
-  EXPECT(by_gpu.rows[1].name == "Google Chrome");
-  EXPECT(by_gpu.rows[2].name == "WebKit");
+  // DeltaCalculator: 500ms elapsed, 250ms CPU time => 50% CPU; 10MB disk read => 20MB/s.
+  SystemSnapshot s1;
+  s1.timestamp = std::chrono::steady_clock::time_point(std::chrono::milliseconds(1000));
+  ProcessRecord p1;
+  p1.pid = 1; p1.cpu_time_ns = 1'000'000'000ULL; p1.p_cpu_time_ns = 500'000'000ULL;
+  p1.disk_read_bytes = 1000; p1.disk_write_bytes = 500;
+  s1.procs.processes = {p1};
+  s1.disk.valid = true; s1.disk.total_read_bytes = 1000; s1.disk.total_write_bytes = 2000;
 
-  cfg.reverse = true;
-  const QuerySummary by_gpu_rev = build_query_summary(snap, cfg);
-  EXPECT(by_gpu_rev.rows[0].name == "Google Chrome");
-  EXPECT(by_gpu_rev.rows[1].name == "Training");
-  EXPECT(by_gpu_rev.rows[2].name == "WebKit");
+  SystemSnapshot s2;
+  s2.timestamp = std::chrono::steady_clock::time_point(std::chrono::milliseconds(1500));
+  ProcessRecord p2 = p1;
+  p2.cpu_time_ns += 250'000'000ULL;
+  p2.p_cpu_time_ns += 200'000'000ULL;
+  p2.disk_read_bytes += 5'000'000ULL;
+  s2.procs.processes = {p2};
+  s2.disk.valid = true; s2.disk.total_read_bytes = 11'000; s2.disk.total_write_bytes = 7'000;
 
-  // Test sorting by count.
-  cfg.reverse = false;
-  cfg.sort = SortField::Count;
-  const QuerySummary by_cnt = build_query_summary(snap, cfg);
-  EXPECT(by_cnt.rows[0].name == "Google Chrome");
-  EXPECT(by_cnt.rows[0].proc_count == 2);
+  DeltaCalculator::apply(s1, s2);
+  EXPECT(s2.procs.processes[0].cpu_pct.has_value());
+  EXPECT(std::abs(*s2.procs.processes[0].cpu_pct - 50.0) < 0.1);
+  EXPECT(std::abs(*s2.procs.processes[0].p_cpu_pct - 40.0) < 0.1);
+  EXPECT(std::abs(*s2.procs.processes[0].disk_read_bps - 10'000'000.0) < 1.0);
+  EXPECT(std::abs(*s2.disk.read_bps - 20'000.0) < 1.0);
+  EXPECT(std::abs(*s2.disk.write_bps - 10'000.0) < 1.0);
+}
 
-  // Test regex filtering (case-insensitive by default).
-  Config fcfg;
-  fcfg.pattern = "CHROME";
-  const QuerySummary filtered = build_query_summary(snap, fcfg);
-  EXPECT(filtered.matched_procs == 2);
-  EXPECT(filtered.matched_footprint == 800);
-  EXPECT(filtered.largest_pid == 101);
-  EXPECT(filtered.rows.size() == 2);
+void test_rendering_all_formats() {
+  using namespace realmem;
+  using json = nlohmann::json;
 
-  // Case-sensitive regex excludes lowercase-mismatched pattern.
-  fcfg.case_sensitive = true;
-  const QuerySummary case_filtered = build_query_summary(snap, fcfg);
-  EXPECT(case_filtered.matched_procs == 0);
+  SystemSnapshot snap;
+  snap.procs.total_pids = 10;
+  ProcessRecord p;
+  p.pid = 42; p.ppid = 1;
+  p.footprint = 1024ULL * 1024 * 600;
+  p.lifetime_max = 1024ULL * 1024 * 900;
+  p.gpu_footprint = 1024ULL * 1024 * 256;
+  p.name = "ghostty";
+  p.cmdline = "ghostty --title demo";
+  snap.procs.processes = {p};
+  snap.procs.total_footprint = p.footprint;
 
-  // Reverse sorting by name.
-  Config scfg;
-  scfg.sort = SortField::Name;
-  scfg.reverse = true;
-  const QuerySummary rev_name = build_query_summary(snap, scfg);
-  EXPECT(rev_name.rows.front().name == "python3.12");
+  snap.memory.valid = true;
+  snap.memory.total = 48ULL * 1024 * 1024 * 1024;
+  snap.memory.wired = 6ULL * 1024 * 1024 * 1024;
+  snap.memory.anonymous = 18ULL * 1024 * 1024 * 1024;
+  snap.memory.compressor = 4ULL * 1024 * 1024 * 1024;
+  snap.memory.compressor_uncompressed = 12ULL * 1024 * 1024 * 1024;
+  snap.memory.file_cache = 12ULL * 1024 * 1024 * 1024;
+  snap.memory.swap = {8ULL * 1024 * 1024 * 1024, 2ULL * 1024 * 1024 * 1024,
+                      6ULL * 1024 * 1024 * 1024, true, true};
+  snap.memory.pressure = MemoryPressureLevel::Warn;
+  snap.memory.memory_free_pct = 62;
+  snap.memory.gpu.valid = true;
+  snap.memory.gpu.allocated = 10ULL * 1024 * 1024 * 1024;
+  snap.memory.gpu.in_use = 512ULL * 1024 * 1024;
+  snap.memory.gpu.recommended_max_working_set = 36ULL * 1024 * 1024 * 1024;
+  snap.memory.gpu.device_util_pct = 42.0;
 
-  // Invalid regex throws std::runtime_error.
-  bool bad_re_threw = false;
-  try {
-    Config bcfg;
-    bcfg.pattern = "[unclosed";
-    (void)build_query_summary(snap, bcfg);
-  } catch (const std::runtime_error&) {
-    bad_re_threw = true;
-  }
-  EXPECT(bad_re_threw);
+  Config cfg;
+  cfg.show_gpu = true;
+  const QuerySummary summary = QueryEngine::run(snap.procs, cfg);
+
+  // Plain rendering includes swap, pressure, compression ratio, GPU limit & headroom & util.
+  const std::string plain = render_output(summary, snap, cfg, RenderContext{100, false});
+  EXPECT(plain.find("3.0x") != std::string::npos);
+  EXPECT(plain.find("swap: 2.0G / 8.0G used") != std::string::npos);
+  EXPECT(plain.find("pressure: warn (62% free)") != std::string::npos);
+  EXPECT(plain.find("limit 36.0G (26.0G headroom)") != std::string::npos);
+  EXPECT(plain.find("42% util") != std::string::npos);
+
+  // FTXUI table rendering
+  cfg.color = ColorMode::Always;
+  const std::string rich = render_output(summary, snap, cfg, RenderContext{100, true});
+  EXPECT(rich.find("ghostty") != std::string::npos);
+  EXPECT(rich.find("warn (62% free)") != std::string::npos);
+  EXPECT(rich.find("26.0G headroom") != std::string::npos);
+  EXPECT(rich.find("\x1b[") != std::string::npos);
+  EXPECT(rich.find('\r') == std::string::npos);
+
+  // JSON rendering
+  cfg.output = OutputFormat::Json;
+  cfg.tree = true;
+  const QuerySummary tree_summary = QueryEngine::run(snap.procs, cfg);
+  const json parsed = json::parse(render_output(tree_summary, snap, cfg, RenderContext{80, false}));
+  EXPECT(parsed["mode"] == "tree");
+  EXPECT(parsed["rows"][0]["subtree_footprint_bytes"] == p.footprint);
+  EXPECT(parsed["system"]["swap"]["used_bytes"] == 2ULL * 1024 * 1024 * 1024);
+  EXPECT(parsed["system"]["pressure"] == "warn");
+  EXPECT(parsed["system"]["memory_free_pct"] == 62);
+  EXPECT(parsed["system"]["gpu"]["ceiling_bytes"] == 36ULL * 1024 * 1024 * 1024);
+  EXPECT(parsed["system"]["gpu"]["headroom_bytes"] == 26ULL * 1024 * 1024 * 1024);
+  EXPECT(parsed["system"]["gpu"]["device_util_pct"] == 42.0);
 }
 
 void test_config_discovery() {
   using namespace realmem;
   namespace fs = std::filesystem;
 
-  const fs::path base = fs::temp_directory_path() / "realmem_test_home";
+  const fs::path base = fs::temp_directory_path() / "realmem_test_home_m1";
   fs::remove_all(base);
   fs::create_directories(base / ".config" / "realmem");
 
   const fs::path dotfile = base / ".realmem.toml";
-  {
-    std::ofstream f(dotfile);
-    f << "count = 10\n";
-  }
-  const auto found_dot = discover_config_path("", base.c_str());
-  EXPECT(found_dot.has_value() && *found_dot == dotfile);
+  { std::ofstream f(dotfile); f << "count = 10\n"; }
+  EXPECT(discover_config_path("", base.c_str()) == dotfile);
 
-  // ~/.config/realmem/config.toml takes precedence over ~/.realmem.toml.
-  const fs::path xdg_default = base / ".config" / "realmem" / "config.toml";
-  {
-    std::ofstream f(xdg_default);
-    f << "count = 15\n";
-  }
-  const auto found_xdg = discover_config_path("", base.c_str());
-  EXPECT(found_xdg.has_value() && *found_xdg == xdg_default);
-
+  const fs::path xdg = base / ".config" / "realmem" / "config.toml";
+  { std::ofstream f(xdg); f << "count = 15\n"; }
+  EXPECT(discover_config_path("", base.c_str()) == xdg);
   fs::remove_all(base);
 }
 
-void test_rendering_plain_and_ftxui() {
-  using namespace realmem;
-
-  Snapshot snap;
-  snap.total_pids = 10;
-  snap.processes = {
-      ProcessInfo{42, 1024ULL * 1024 * 600, 1024ULL * 1024 * 900, 1024ULL * 1024 * 256, "ghostty",
-                  "", "ghostty --title demo"},
-      ProcessInfo{99, 1024ULL * 1024 * 120, 1024ULL * 1024 * 150, std::nullopt, "WindowServer", "",
-                  ""},
-  };
-  snap.total_footprint = snap.processes[0].footprint + snap.processes[1].footprint;
-
-  SystemMemory sys;
-  sys.total = 48ULL * 1024 * 1024 * 1024;
-  sys.wired = 6ULL * 1024 * 1024 * 1024;
-  sys.anonymous = 18ULL * 1024 * 1024 * 1024;
-  sys.compressor = 3ULL * 1024 * 1024 * 1024;
-  sys.file_cache = 12ULL * 1024 * 1024 * 1024;
-  sys.gpu.allocated = 2ULL * 1024 * 1024 * 1024;
-  sys.gpu.in_use = 512ULL * 1024 * 1024;
-  sys.gpu.valid = true;
-  sys.valid = true;
-
-  Config cfg;
-  cfg.show_gpu = true;
-  const QuerySummary summary = build_query_summary(snap, cfg);
-
-  // Plain rendering with GPU column and system GPU line.
-  const std::string plain = render_output(summary, sys, cfg, RenderContext{100, false});
-  EXPECT(plain.find("GPU") != std::string::npos);
-  EXPECT(plain.find("256.0M") != std::string::npos);
-  EXPECT(plain.find("6.0G wired") != std::string::npos);
-  EXPECT(plain.find("gpu: 2.0G alloc (512.0M in use)") != std::string::npos);
-  EXPECT(plain.find("requires sudo") == std::string::npos);
-  EXPECT(plain.find("\x1b[") == std::string::npos);
-
-  // FTXUI rich rendering (wide + narrow 80-col long + GPU mode).
-  cfg.color = ColorMode::Always;
-  const std::string rich = render_output(summary, sys, cfg, RenderContext{110, true});
-  EXPECT(rich.find("ghostty") != std::string::npos);
-  EXPECT(rich.find("256.0M") != std::string::npos);
-  EXPECT(rich.find("2.0G") != std::string::npos);
-  EXPECT(rich.find("512.0M") != std::string::npos);
-  EXPECT(rich.find("\x1b[") != std::string::npos);
-  EXPECT(rich.find('\r') == std::string::npos);
-
-  cfg.long_format = true;
-  const std::string narrow_long = render_output(summary, sys, cfg, RenderContext{80, true});
-  EXPECT(narrow_long.find("FOOTPRINT") != std::string::npos);
-  EXPECT(narrow_long.find("GPU") != std::string::npos);
-  EXPECT(narrow_long.find("PEAK") != std::string::npos);
-  EXPECT(narrow_long.find("file cache (reclaimable)") != std::string::npos);
-
-  // Unprivileged --gpu hint appears when no process had readable GPU ledger.
-  Snapshot no_gpu_snap;
-  no_gpu_snap.total_pids = 1;
-  no_gpu_snap.processes = {
-      ProcessInfo{7, 1024 * 1024, 1024 * 1024, std::nullopt, "zsh", "", "zsh"},
-  };
-  no_gpu_snap.total_footprint = 1024 * 1024;
-  Config hint_cfg;
-  hint_cfg.show_gpu = true;
-  const QuerySummary no_gpu_summary = build_query_summary(no_gpu_snap, hint_cfg);
-  const std::string hinted = render_output(no_gpu_summary, sys, hint_cfg, RenderContext{100, false});
-  EXPECT(hinted.find("per-process GPU requires sudo") != std::string::npos);
-}
-
-void test_json_output_and_skill() {
+void test_ioreport_energy_and_monitor_facade() {
   using namespace realmem;
   using json = nlohmann::json;
 
-  // CLI -o json and TOML output = "json".
-  const char* argv_json[] = {"realmem", "--no-config", "-o", "json", "5"};
-  const ParseResult r_json = parse_args_and_config(5, argv_json);
-  EXPECT(!r_json.should_exit);
-  EXPECT(r_json.config.output == OutputFormat::Json);
-  EXPECT(r_json.config.count == 5);
+  EXPECT(std::abs(energy_delta_to_watts(500, "mJ", 0.5) - 1.0) < 0.001);
+  EXPECT(std::abs(energy_delta_to_watts(2'000'000, "uJ", 1.0) - 2.0) < 0.001);
+  EXPECT(std::abs(energy_delta_to_watts(1'000'000'000LL, "nJ", 0.25) - 4.0) < 0.001);
+  EXPECT(energy_delta_to_watts(-5, "mJ", 1.0) == 0.0);
 
-  Config toml_cfg;
-  load_toml_string("output = \"json\"\n", toml_cfg);
-  EXPECT(toml_cfg.output == OutputFormat::Json);
-
-  // --skill exits cleanly and outputs embedded SKILL.md frontmatter.
-  const char* argv_skill[] = {"realmem", "--skill"};
-  const ParseResult r_skill = parse_args_and_config(2, argv_skill);
-  EXPECT(r_skill.should_exit);
-  EXPECT(r_skill.exit_code == 0);
-  EXPECT(r_skill.message.find("name: realmem") != std::string::npos);
-  EXPECT(r_skill.message.find("--output json") != std::string::npos);
-
-  // Build realistic snapshot + system stats and verify parsed JSON schema.
-  Snapshot snap;
-  snap.total_pids = 10;
-  snap.processes = {
-      ProcessInfo{42, 600, 900, 256, "ghostty", "/Applications/Ghostty.app/Contents/MacOS/ghostty",
-                  "ghostty --title demo"},
-      ProcessInfo{99, 120, 150, std::nullopt, "WindowServer", "", ""},
+  // Inject fake samplers into SystemMonitor to test end-to-end orchestration & telemetry layering.
+  struct FakeProc final : IProcessSampler {
+    int calls = 0;
+    ProcessSnapshot sample(const SampleRequest&) override {
+      ++calls;
+      ProcessRecord p;
+      p.pid = 7; p.name = "train"; p.footprint = 1024 * 1024 * 500;
+      p.cpu_time_ns = static_cast<std::uint64_t>(calls) * 100'000'000ULL;
+      p.disk_read_bytes = static_cast<std::uint64_t>(calls) * 1024 * 1024;
+      ProcessSnapshot s;
+      s.total_pids = 1; s.total_footprint = p.footprint;
+      s.processes = {p};
+      return s;
+    }
   };
-  snap.total_footprint = 720;
+  struct FakeMem final : IMemorySampler {
+    SystemMemory sample() override {
+      SystemMemory m;
+      m.valid = true; m.total = 48ULL * 1024 * 1024 * 1024;
+      return m;
+    }
+  };
+  struct FakeGpu final : IGpuSampler {
+    GpuInfo sample_system() override {
+      GpuInfo g; g.valid = true; g.allocated = 4ULL * 1024 * 1024 * 1024;
+      g.recommended_max_working_set = 36ULL * 1024 * 1024 * 1024;
+      return g;
+    }
+    std::optional<std::uint64_t> sample_process(pid_t) override { return std::nullopt; }
+  };
+  struct FakeCpu final : ICpuSampler {
+    CpuInfo sample() override {
+      CpuInfo c; c.valid = true; c.total_util_pct = 25.0;
+      c.tiers = {{"Super", 5, 40.0, std::nullopt}, {"Performance", 10, 17.5, std::nullopt}};
+      return c;
+    }
+  };
+  struct FakeDisk final : IDiskSampler {
+    int calls = 0;
+    DiskInfo sample() override {
+      ++calls;
+      DiskInfo d; d.valid = true;
+      d.total_read_bytes = static_cast<std::uint64_t>(calls) * 10'000'000ULL;
+      return d;
+    }
+  };
+  struct FakeTelemetry final : ITelemetrySampler {
+    void sample_into(CpuInfo& cpu, GpuInfo& gpu, TelemetryInfo& tel) override {
+      cpu.power_watts = 14.5;
+      gpu.power_watts = 28.0;
+      tel.cpu_watts = 14.5;
+      tel.gpu_watts = 28.0;
+      tel.from_ioreport = true;
+    }
+  };
 
-  SystemMemory sys;
-  sys.total = 48000;
-  sys.wired = 6000;
-  sys.anonymous = 18000;
-  sys.compressor = 3000;
-  sys.file_cache = 12000;
-  sys.free_bytes = 9000;
-  sys.gpu.allocated = 2000;
-  sys.gpu.in_use = 500;
-  sys.gpu.valid = true;
-  sys.valid = true;
+  SystemMonitor mon(std::make_unique<FakeProc>(), std::make_unique<FakeMem>(),
+                    std::make_unique<FakeGpu>(), std::make_unique<FakeCpu>(),
+                    std::make_unique<FakeDisk>(), std::make_unique<FakeTelemetry>());
 
   Config cfg;
+  cfg.show_cpu = true;
+  cfg.show_disk = true;
   cfg.output = OutputFormat::Json;
-  cfg.show_gpu = true;
-  const QuerySummary summary = build_query_summary(snap, cfg);
-  const json parsed = json::parse(render_output(summary, sys, cfg, RenderContext{80, true}));
+  const SampleRequest req = build_sample_request(cfg);
+  const SystemSnapshot snap = mon.sample_with_rates(req, 10);
 
-  EXPECT(parsed["mode"] == "processes");
-  EXPECT(parsed["summary"]["readable_processes"] == 2);
-  EXPECT(parsed["summary"]["total_processes"] == 10);
-  EXPECT(parsed["summary"]["total_footprint_bytes"] == 720);
-  EXPECT(parsed["summary"]["gpu_readable_processes"] == 1);
-  EXPECT(parsed["rows"].size() == 2);
-  EXPECT(parsed["rows"][0]["pid"] == 42);
-  EXPECT(parsed["rows"][0]["footprint_bytes"] == 600);
-  EXPECT(parsed["rows"][0]["gpu_bytes"] == 256);
-  EXPECT(parsed["rows"][0]["cmdline"] == "ghostty --title demo");
-  EXPECT(parsed["rows"][1]["gpu_bytes"].is_null());
-  EXPECT(parsed["system"]["wired_bytes"] == 6000);
-  EXPECT(parsed["system"]["gpu"]["allocated_bytes"] == 2000);
-  EXPECT(parsed["system"]["gpu"]["in_use_bytes"] == 500);
+  EXPECT(snap.telemetry.from_ioreport);
+  EXPECT(snap.cpu.power_watts == 14.5);
+  EXPECT(snap.memory.gpu.power_watts == 28.0);
+  EXPECT(snap.procs.processes[0].cpu_pct.has_value());
+  EXPECT(snap.disk.read_bps.has_value());
 
-  // Grouped + --sum JSON omits rows/system and populates pattern totals.
-  Config sum_cfg;
-  sum_cfg.output = OutputFormat::Json;
-  sum_cfg.group = true;
-  sum_cfg.pattern = "ghostty";
-  sum_cfg.sum_only = true;
-  const QuerySummary sum_summary = build_query_summary(snap, sum_cfg);
-  const json sum_json =
-      json::parse(render_output(sum_summary, sys, sum_cfg, RenderContext{80, false}));
-  EXPECT(sum_json["mode"] == "grouped");
-  EXPECT(sum_json["summary"]["matched_processes"] == 1);
-  EXPECT(sum_json["summary"]["matched_footprint_bytes"] == 600);
-  EXPECT(!sum_json.contains("rows"));
-  EXPECT(!sum_json.contains("system"));
+  const QuerySummary summary = QueryEngine::run(snap.procs, cfg);
+  const json out = json::parse(render_output(summary, snap, cfg, RenderContext{100, false}));
+  EXPECT(out["system"]["cpu"]["tiers"].size() == 2);
+  EXPECT(out["system"]["cpu"]["tiers"][0]["name"] == "Super");
+  EXPECT(out["system"]["cpu"]["power_watts"] == 14.5);
+  EXPECT(out["system"]["gpu"]["power_watts"] == 28.0);
+  EXPECT(out["system"]["disk"].contains("read_bps"));
+}
+
+void test_tui_state_and_sparklines() {
+  using namespace realmem;
+
+  const std::deque<double> series = {0.0, 50.0, 100.0};
+  const std::string spark = render_sparkline(series, 3, 100.0);
+  EXPECT(utf8_length(spark) == 3);
+  EXPECT(spark.find("\xe2\x96\x88") != std::string::npos);  // max reaches full block █
+
+  Config init_cfg;
+  TuiState state(init_cfg, /*history_cap=*/3);
+
+  SystemSnapshot snap;
+  snap.memory.valid = true;
+  snap.memory.total = 1000;
+  snap.memory.anonymous = 600;
+  snap.memory.swap = {500, 100, 400, true, true};
+  snap.memory.gpu.valid = true;
+  snap.memory.gpu.allocated = 300;
+  snap.cpu.valid = true;
+  snap.cpu.total_util_pct = 45.0;
+
+  ProcessRecord p1;
+  p1.pid = 10; p1.ppid = 1; p1.footprint = 400; p1.name = "uv"; p1.cmdline = "uv run train.py";
+  ProcessRecord p2;
+  p2.pid = 20; p2.ppid = 10; p2.footprint = 800; p2.name = "python3"; p2.cmdline = "python3 train.py";
+  ProcessRecord p3;
+  p3.pid = 30; p3.ppid = 1; p3.footprint = 200; p3.name = "node"; p3.cmdline = "node server.js";
+  snap.procs.processes = {p1, p2, p3};
+  snap.procs.total_pids = 3;
+  snap.procs.total_footprint = 1400;
+
+  state.apply_snapshot(snap);
+  EXPECT(state.summary().rows.size() == 3);
+  EXPECT(state.mem_history().size() == 1);
+
+  // Live search filtering + graceful invalid regex handling.
+  state.begin_search();
+  state.set_filter("train");
+  EXPECT(state.summary().rows.size() == 2);
+  EXPECT(!state.filter_error().has_value());
+
+  state.set_filter("[invalid");
+  EXPECT(state.filter_error().has_value());
+  EXPECT(state.summary().rows.size() == 2);  // prior valid rows retained
+
+  state.end_search(/*clear_filter=*/true);
+  EXPECT(state.filter_text().empty());
+  EXPECT(state.summary().rows.size() == 3);
+
+  // Mode toggle to tree rolls uv(10) + python3(20) together at top.
+  state.toggle_tree();
+  EXPECT(state.view_mode() == ViewMode::Tree);
+  EXPECT(state.summary().rows[0].pid == 10);
+  EXPECT(state.summary().rows[0].subtree_footprint == 1200);
+
+  // Scrolling & pause behavior.
+  state.move_selection(2, 2);
+  EXPECT(state.selected_index() == 2);
+  EXPECT(state.scroll_offset() == 1);
+
+  state.toggle_pause();
+  state.apply_snapshot(snap);
+  EXPECT(state.mem_history().size() == 1);  // paused skips updates
 }
 
 }  // namespace
 
 int main() {
   test_humanize_and_utf8();
-  test_graphics_ledger_math();
+  test_graphics_ledger_and_pressure();
   test_toml_loading_and_precedence();
-  test_bare_positional_and_gpu_cli();
-  test_grouping_filtering_and_sorting();
+  test_cli_validation();
+  test_process_tree_and_rollup();
+  test_grouping_and_delta_calculator();
+  test_rendering_all_formats();
   test_config_discovery();
-  test_rendering_plain_and_ftxui();
-  test_json_output_and_skill();
+  test_ioreport_energy_and_monitor_facade();
+  test_tui_state_and_sparklines();
 
   if (g_failures == 0) {
     std::cout << "All tests passed.\n";

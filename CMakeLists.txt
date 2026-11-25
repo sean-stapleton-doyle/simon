@@ -1,9 +1,11 @@
 cmake_minimum_required(VERSION 3.20)
-project(realmem VERSION 0.1.2 LANGUAGES CXX)
+project(realmem VERSION 1.0.0 LANGUAGES CXX OBJCXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
+set(CMAKE_OBJCXX_STANDARD 20)
+set(CMAKE_OBJCXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 # Guard against older cmake_minimum_required() inside third-party dependencies on CMake 4+.
@@ -69,12 +71,26 @@ configure_file(
 )
 
 add_library(realmem_core STATIC
-  src/config.cpp
-  src/gpu.cpp
-  src/json_render.cpp
-  src/model.cpp
-  src/process.cpp
-  src/render.cpp
+  src/config/config.cpp
+  src/domain/delta.cpp
+  src/domain/grouping.cpp
+  src/domain/query.cpp
+  src/domain/tree.cpp
+  src/platform/monitor.cpp
+  src/platform/macos/cpu_sampler.cpp
+  src/platform/macos/disk_sampler.cpp
+  src/platform/macos/gpu_sampler.cpp
+  src/platform/macos/ioreport_sampler.cpp
+  src/platform/macos/memory_sampler.cpp
+  src/platform/macos/metal_info.mm
+  src/platform/macos/process_sampler.cpp
+  src/render/format_utils.cpp
+  src/render/json_renderer.cpp
+  src/render/plain_renderer.cpp
+  src/render/renderer.cpp
+  src/render/table_renderer.cpp
+  src/tui/tui_app.cpp
+  src/tui/tui_state.cpp
 )
 
 target_include_directories(realmem_core PUBLIC
@@ -83,19 +99,29 @@ target_include_directories(realmem_core PUBLIC
 )
 
 target_link_libraries(realmem_core PUBLIC
+  ftxui::component
   ftxui::dom
   ftxui::screen
   CLI11::CLI11
   tomlplusplus::tomlplusplus
   nlohmann_json::nlohmann_json
+  IOReport
   "-framework IOKit"
   "-framework CoreFoundation"
+  "-framework Foundation"
+  "-framework Metal"
 )
 
 target_compile_options(realmem_core PRIVATE
   -Wall
   -Wextra
   -Wpedantic
+)
+
+# IOReportIterate takes an Apple block (^).
+set_source_files_properties(
+  src/platform/macos/ioreport_sampler.cpp
+  PROPERTIES COMPILE_OPTIONS "-fblocks;-Wno-gnu-statement-expression"
 )
 
 add_executable(realmem src/main.cpp)

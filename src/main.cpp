@@ -1,13 +1,14 @@
-#include "config.hpp"
-#include "model.hpp"
-#include "process.hpp"
-#include "render.hpp"
+#include "config/config.hpp"
+#include "domain/query.hpp"
+#include "platform/macos/process_sampler.hpp"
+#include "platform/monitor.hpp"
+#include "render/renderer.hpp"
+#include "tui/tui_app.hpp"
 
 #include <unistd.h>
 
 #include <exception>
 #include <iostream>
-#include <optional>
 
 int main(int argc, char** argv) {
   using namespace realmem;
@@ -23,25 +24,24 @@ int main(int argc, char** argv) {
   const Config& cfg = parsed.config;
 
   try {
-    const bool need_cmdline =
-        cfg.pattern.has_value() || (cfg.long_format && !cfg.group) ||
-        (cfg.group && !cfg.group_rules.empty());
-    const bool need_path = cfg.group;
-    const bool need_gpu = cfg.show_gpu || cfg.sort == SortField::Gpu;
-    const std::optional<pid_t> exclude_self =
-        cfg.pattern.has_value() ? std::optional<pid_t>(getpid()) : std::nullopt;
+    SystemMonitor monitor = create_macos_monitor();
 
-    const Snapshot snap = collect_processes(need_cmdline, need_path, need_gpu, exclude_self);
-    const SystemMemory sys =
-        (!cfg.sum_only && cfg.show_system) ? collect_system_memory() : SystemMemory{};
-    const QuerySummary summary = build_query_summary(snap, cfg);
+    if (cfg.watch) {
+      return TuiApp(monitor, cfg).run();
+    }
+
+    const SampleRequest req = build_sample_request(cfg, getpid());
+    const bool need_rates = req.need_cpu || req.need_disk;
+    const SystemSnapshot snap =
+        need_rates ? monitor.sample_with_rates(req, cfg.sample_ms) : monitor.sample(req);
+    const QuerySummary summary = QueryEngine::run(snap.procs, cfg);
 
     const RenderContext ctx{
         .width = terminal_width(160),
         .is_tty = stdout_is_tty(),
     };
 
-    std::cout << render_output(summary, sys, cfg, ctx);
+    std::cout << render_output(summary, snap, cfg, ctx);
     return 0;
   } catch (const std::exception& err) {
     std::cerr << "realmem: " << err.what() << '\n';
