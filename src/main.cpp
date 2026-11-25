@@ -34,7 +34,8 @@ int main(int argc, char** argv) {
     const bool need_rates = req.need_cpu || req.need_disk;
     const SystemSnapshot snap =
         need_rates ? monitor.sample_with_rates(req, cfg.sample_ms) : monitor.sample(req);
-    const QuerySummary summary = QueryEngine::run(snap.procs, cfg);
+    const QuerySummary summary =
+        cfg.short_mode ? QuerySummary{} : QueryEngine::run(snap.procs, cfg);
 
     const RenderContext ctx{
         .width = terminal_width(160),

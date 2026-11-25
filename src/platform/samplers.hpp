@@ -9,6 +9,7 @@
 namespace simon {
 
 struct SampleRequest {
+  bool need_processes = true;
   bool need_cmdline = false;
   bool need_path = false;
   bool need_ppid = false;

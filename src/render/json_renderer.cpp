@@ -11,6 +11,7 @@ namespace {
 using json = nlohmann::json;
 
 std::string_view mode_name(const Config& cfg) {
+  if (cfg.short_mode) return "short";
   if (cfg.tree) return "tree";
   if (cfg.group) return "grouped";
   return "processes";
@@ -156,6 +157,14 @@ std::string JsonRenderer::render(const QuerySummary& summary,
                                  const SystemSnapshot& snap,
                                  const Config& cfg,
                                  const RenderContext&) const {
+  if (cfg.short_mode) {
+    json root = {{"mode", "short"}};
+    if (snap.memory.valid) {
+      root["system"] = system_to_json(snap, cfg);
+    }
+    return root.dump(2) + "\n";
+  }
+
   json root = {
       {"mode", mode_name(cfg)},
       {"summary", summary_to_json(summary, cfg)},

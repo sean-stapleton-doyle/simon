@@ -44,5 +44,7 @@ jobs:
         run: |
           ./build/simon --help
           ./build/simon --skill | head -n 5
+          ./build/simon -S --plain --no-config
+          ./build/simon -S -o json --no-config
           ./build/simon 5 --plain --no-config
           ./build/simon -g 5 -o json --no-config

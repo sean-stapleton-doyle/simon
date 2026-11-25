@@ -509,6 +509,94 @@ void test_tui_state_and_sparklines() {
   EXPECT(state.mem_history().size() == 1);  // paused skips updates
 }
 
+void test_short_mode() {
+  using namespace simon;
+  using json = nlohmann::json;
+
+  // CLI -S / --short, TOML short = true, and --no-short override.
+  const char* argv_s[] = {"simon", "--no-config", "-S"};
+  const ParseResult rs = parse_args_and_config(3, argv_s);
+  EXPECT(!rs.should_exit && rs.config.short_mode);
+
+  Config toml_cfg;
+  load_toml_string("short = true\ncpu = true\n", toml_cfg);
+  EXPECT(toml_cfg.short_mode && toml_cfg.show_cpu);
+
+  // Validation: --short conflicts with --sum, --watch, and --no-system.
+  const char* argv_bad1[] = {"simon", "--no-config", "-S", "--sum", "py"};
+  EXPECT(parse_args_and_config(5, argv_bad1).should_exit);
+  const char* argv_bad2[] = {"simon", "--no-config", "-S", "--no-system"};
+  EXPECT(parse_args_and_config(4, argv_bad2).should_exit);
+  const char* argv_bad3[] = {"simon", "--no-config", "-S", "-w"};
+  EXPECT(parse_args_and_config(4, argv_bad3).should_exit);
+
+  // Verify SystemMonitor skips process sampling entirely in short mode.
+  int proc_calls = 0;
+  struct CountingProc final : IProcessSampler {
+    int* counter = nullptr;
+    explicit CountingProc(int* c) : counter(c) {}
+    ProcessSnapshot sample(const SampleRequest&) override {
+      ++(*counter);
+      return {};
+    }
+  };
+  struct FakeMem final : IMemorySampler {
+    SystemMemory sample() override {
+      SystemMemory m;
+      m.valid = true;
+      m.total = 48ULL * 1024 * 1024 * 1024;
+      m.wired = 4ULL * 1024 * 1024 * 1024;
+      m.anonymous = 20ULL * 1024 * 1024 * 1024;
+      m.swap = {8ULL * 1024 * 1024 * 1024, 1ULL * 1024 * 1024 * 1024,
+                7ULL * 1024 * 1024 * 1024, true, true};
+      m.pressure = MemoryPressureLevel::Normal;
+      m.memory_free_pct = 80;
+      return m;
+    }
+  };
+  struct FakeGpu final : IGpuSampler {
+    GpuInfo sample_system() override {
+      GpuInfo g;
+      g.valid = true;
+      g.allocated = 10ULL * 1024 * 1024 * 1024;
+      g.in_use = 512ULL * 1024 * 1024;
+      g.recommended_max_working_set = 36ULL * 1024 * 1024 * 1024;
+      return g;
+    }
+    std::optional<std::uint64_t> sample_process(pid_t) override { return std::nullopt; }
+  };
+
+  SystemMonitor mon(std::make_unique<CountingProc>(&proc_calls),
+                    std::make_unique<FakeMem>(),
+                    std::make_unique<FakeGpu>());
+  Config cfg;
+  cfg.short_mode = true;
+  const SampleRequest req = build_sample_request(cfg);
+  EXPECT(!req.need_processes);
+  const SystemSnapshot snap = mon.sample(req);
+  EXPECT(proc_calls == 0);
+
+  // Plain, FTXUI, and JSON short rendering omit table/rows and keep system/swap/gpu.
+  const std::string plain = render_output(QuerySummary{}, snap, cfg, RenderContext{100, false});
+  EXPECT(plain.find("PID") == std::string::npos);
+  EXPECT(plain.find("system:") != std::string::npos);
+  EXPECT(plain.find("swap:") != std::string::npos);
+  EXPECT(plain.find("gpu:") != std::string::npos);
+
+  cfg.color = ColorMode::Always;
+  const std::string rich = render_output(QuerySummary{}, snap, cfg, RenderContext{100, true});
+  EXPECT(rich.find("PID") == std::string::npos);
+  EXPECT(rich.find("48.0G") != std::string::npos);
+  EXPECT(rich.find("26.0G headroom") != std::string::npos);
+
+  cfg.output = OutputFormat::Json;
+  const json j = json::parse(render_output(QuerySummary{}, snap, cfg, RenderContext{100, false}));
+  EXPECT(j["mode"] == "short");
+  EXPECT(!j.contains("rows"));
+  EXPECT(!j.contains("summary"));
+  EXPECT(j["system"]["gpu"]["headroom_bytes"] == 26ULL * 1024 * 1024 * 1024);
+}
+
 }  // namespace
 
 int main() {
@@ -522,6 +610,7 @@ int main() {
   test_config_discovery();
   test_ioreport_energy_and_monitor_facade();
   test_tui_state_and_sparklines();
+  test_short_mode();
 
   if (g_failures == 0) {
     std::cout << "All tests passed.\n";

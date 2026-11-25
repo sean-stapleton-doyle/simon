@@ -47,6 +47,7 @@ struct Config {
   bool show_gpu = false;
   bool show_cpu = false;
   bool show_disk = false;
+  bool short_mode = false;
   bool watch = false;
   int interval_ms = 1000;  // TUI refresh interval
   int sample_ms = 250;     // one-shot delta sample window for --cpu/--disk

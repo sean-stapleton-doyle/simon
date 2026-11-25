@@ -429,27 +429,33 @@ std::string TableRenderer::render(const QuerySummary& summary,
   const TableLayout layout = compute_layout(summary, snap.memory, cfg, ctx.width);
   Elements sections;
 
-  if (!cfg.sum_only) {
-    std::uint64_t max_row_fp = 1;
-    for (const auto& row : summary.rows) {
-      max_row_fp = std::max(max_row_fp, row.effective_footprint());
+  if (cfg.short_mode) {
+    if (snap.memory.valid) {
+      sections.push_back(build_system_summary_element(snap, cfg, layout.width));
+    }
+  } else {
+    if (!cfg.sum_only) {
+      std::uint64_t max_row_fp = 1;
+      for (const auto& row : summary.rows) {
+        max_row_fp = std::max(max_row_fp, row.effective_footprint());
+      }
+
+      Elements table_rows;
+      table_rows.push_back(build_header(layout, cfg.group));
+      table_rows.push_back(separatorLight() | color(Color::GrayDark));
+      for (const auto& row : summary.rows) {
+        table_rows.push_back(build_row(row, max_row_fp, snap.memory, layout, cfg));
+      }
+      sections.push_back(vbox(std::move(table_rows)));
+      sections.push_back(text(""));
     }
 
-    Elements table_rows;
-    table_rows.push_back(build_header(layout, cfg.group));
-    table_rows.push_back(separatorLight() | color(Color::GrayDark));
-    for (const auto& row : summary.rows) {
-      table_rows.push_back(build_row(row, max_row_fp, snap.memory, layout, cfg));
+    sections.push_back(paragraph(format_summary_line(summary, cfg)) | bold);
+
+    if (!cfg.sum_only && cfg.show_system && snap.memory.valid) {
+      sections.push_back(text(""));
+      sections.push_back(build_system_summary_element(snap, cfg, layout.width));
     }
-    sections.push_back(vbox(std::move(table_rows)));
-    sections.push_back(text(""));
-  }
-
-  sections.push_back(paragraph(format_summary_line(summary, cfg)) | bold);
-
-  if (!cfg.sum_only && cfg.show_system && snap.memory.valid) {
-    sections.push_back(text(""));
-    sections.push_back(build_system_summary_element(snap, cfg, layout.width));
   }
 
   Element doc = vbox(std::move(sections));

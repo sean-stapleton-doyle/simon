@@ -46,8 +46,9 @@ make test             # runs the unit test suite
 ## Usage
 
 ```sh
-simon               # top 20 processes (styled in TTY, plain when piped)
-simon -g            # group helper/renderer processes by .app bundle
+simon                 # top 20 processes (styled in TTY, plain when piped)
+simon -S              # short summary only (RAM, swap, pressure, GPU headroom — no table)
+simon -g              # group helper/renderer processes by .app bundle
 simon -t            # parent/child process tree with rolled-up subtree footprints
 simon -w            # read-only live TUI monitor (search /, toggle g/t/s/r/p, quit q)
 simon --cpu --disk  # include Apple Silicon CPU tiers, watts, and disk I/O rates
@@ -82,6 +83,7 @@ Key flags:
 | `-r, --reverse` | Reverse sort order |
 | `-g, --group` | Aggregate helpers by `.app` bundle / process name |
 | `-t, --tree` | Parent/child process tree with rolled-up subtree footprints |
+| `-S, --short` | Show only host RAM, swap, pressure, and GPU stats (skips process scan) |
 | `-w, --watch` | Read-only live TUI monitor (`--interval-ms N`, default `1000`) |
 | `--cpu` / `--disk` | Opt-in Apple Silicon CPU tier & disk I/O telemetry (`--sample-ms N`, default `250`) |
 | `--gpu` / `--no-gpu` | Per-process GPU memory column (requires `sudo`) |
@@ -121,6 +123,7 @@ tree = false
 gpu = false
 cpu = false
 disk = false
+short = false
 long = false
 case_sensitive = false
 interval_ms = 1000     # --watch refresh interval

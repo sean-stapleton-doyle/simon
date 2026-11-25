@@ -15,16 +15,18 @@ namespace simon {
 
 SampleRequest build_sample_request(const Config& cfg, std::optional<pid_t> self_pid) {
   SampleRequest req;
-  req.need_cmdline = cfg.pattern.has_value() || (cfg.long_format && !cfg.group) ||
-                     (cfg.group && !cfg.group_rules.empty());
-  req.need_path = cfg.group;
-  req.need_ppid = cfg.tree || cfg.watch;
-  req.need_process_gpu = cfg.show_gpu || cfg.sort == SortField::Gpu;
-  req.need_system_memory = cfg.watch || (!cfg.sum_only && cfg.show_system);
+  req.need_processes = !cfg.short_mode;
+  req.need_cmdline = req.need_processes &&
+                     (cfg.pattern.has_value() || (cfg.long_format && !cfg.group) ||
+                      (cfg.group && !cfg.group_rules.empty()));
+  req.need_path = req.need_processes && cfg.group;
+  req.need_ppid = req.need_processes && (cfg.tree || cfg.watch);
+  req.need_process_gpu = req.need_processes && (cfg.show_gpu || cfg.sort == SortField::Gpu);
+  req.need_system_memory = cfg.short_mode || cfg.watch || (!cfg.sum_only && cfg.show_system);
   req.need_cpu = cfg.watch || cfg.show_cpu || cfg.sort == SortField::Cpu;
   req.need_disk = cfg.watch || cfg.show_disk || cfg.sort == SortField::Disk;
   req.need_telemetry = req.need_cpu || cfg.watch;
-  if (cfg.pattern && self_pid) {
+  if (req.need_processes && cfg.pattern && self_pid) {
     req.exclude_pid = *self_pid;
   }
   return req;
@@ -47,7 +49,7 @@ SystemSnapshot SystemMonitor::sample_raw(const SampleRequest& req) {
   SystemSnapshot snap;
   snap.timestamp = std::chrono::steady_clock::now();
 
-  if (proc_sampler_) {
+  if (req.need_processes && proc_sampler_) {
     snap.procs = proc_sampler_->sample(req);
   }
   if (req.need_system_memory && mem_sampler_) {

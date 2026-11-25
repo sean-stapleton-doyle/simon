@@ -15,6 +15,9 @@ Always pass `--output json` (or `-o json`) so output is machine-parseable with e
 # Top 20 processes + host memory, compression ratio, swap, pressure, and GPU headroom
 simon -o json
 
+# Instant host-only summary (RAM, swap, pressure, GPU headroom; skips process scan, lowest token usage)
+simon -S -o json
+
 # Roll up helpers/renderers by macOS .app bundle
 simon -g -o json
 

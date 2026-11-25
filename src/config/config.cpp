@@ -33,6 +33,7 @@ struct CliValues {
   std::optional<bool> show_gpu;
   std::optional<bool> show_cpu;
   std::optional<bool> show_disk;
+  std::optional<bool> short_mode;
   std::optional<bool> watch;
   std::optional<bool> case_sensitive;
   std::optional<bool> sum_only;
@@ -133,6 +134,7 @@ void apply_toml_table(const toml::table& tbl, Config& cfg) {
   read_toml_bool(tbl, "gpu", cfg.show_gpu);
   read_toml_bool(tbl, "cpu", cfg.show_cpu);
   read_toml_bool(tbl, "disk", cfg.show_disk);
+  read_toml_bool(tbl, "short", cfg.short_mode);
   read_toml_bool(tbl, "case_sensitive", cfg.case_sensitive);
   read_toml_bool(tbl, "bars", cfg.show_bars);
   read_toml_bool(tbl, "system", cfg.show_system);
@@ -201,6 +203,9 @@ void register_cli_options(CLI::App& app, CliValues& cli) {
   set_flag("--no-cpu", "Disable CPU telemetry (overrides config)", cli.show_cpu, false);
   set_flag("--disk", "Include system and per-process disk I/O", cli.show_disk, true);
   set_flag("--no-disk", "Disable disk I/O telemetry (overrides config)", cli.show_disk, false);
+  set_flag("-S,--short", "Show only host memory, swap, pressure, and GPU stats (no table)",
+           cli.short_mode, true);
+  set_flag("--no-short", "Show the full process table (overrides config)", cli.short_mode, false);
   set_flag("-w,--watch", "Launch read-only live TUI monitor", cli.watch, true);
   set_flag("-c,--case", "Match regex case-sensitively", cli.case_sensitive, true);
   set_flag("--sum", "Print only the aggregate total for matches", cli.sum_only, true);
@@ -241,6 +246,7 @@ void apply_cli_overrides(const CliValues& cli, Config& cfg) {
   if (cli.show_gpu) cfg.show_gpu = *cli.show_gpu;
   if (cli.show_cpu) cfg.show_cpu = *cli.show_cpu;
   if (cli.show_disk) cfg.show_disk = *cli.show_disk;
+  if (cli.short_mode) cfg.short_mode = *cli.short_mode;
   if (cli.watch) cfg.watch = *cli.watch;
   if (cli.case_sensitive) cfg.case_sensitive = *cli.case_sensitive;
   if (cli.sum_only) cfg.sum_only = *cli.sum_only;
@@ -449,8 +455,14 @@ std::optional<std::string> validate_config(const Config& cfg) {
   if (cfg.sort == SortField::Pid && cfg.group) {
     return "--sort pid cannot be used with --group (-g)";
   }
-  if (cfg.watch && (cfg.output == OutputFormat::Json || cfg.sum_only)) {
-    return "--watch (-w) cannot be combined with --output json or --sum";
+  if (cfg.watch && (cfg.output == OutputFormat::Json || cfg.sum_only || cfg.short_mode)) {
+    return "--watch (-w) cannot be combined with --output json, --sum, or --short";
+  }
+  if (cfg.short_mode && cfg.sum_only) {
+    return "--short (-S) cannot be combined with --sum";
+  }
+  if (cfg.short_mode && !cfg.show_system) {
+    return "--short (-S) cannot be combined with --no-system";
   }
   return std::nullopt;
 }

@@ -176,6 +176,10 @@ std::string PlainRenderer::render(const QuerySummary& summary,
                                   const SystemSnapshot& snap,
                                   const Config& cfg,
                                   const RenderContext& ctx) const {
+  if (cfg.short_mode) {
+    return snap.memory.valid ? (format_system_section(snap, cfg) + "\n") : std::string{};
+  }
+
   std::ostringstream out;
   if (!cfg.sum_only) {
     const PlainLayout layout = compute_layout(summary, cfg, ctx.width);
