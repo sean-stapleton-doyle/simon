@@ -130,8 +130,25 @@ target_compile_options(simon PRIVATE -Wall -Wextra -Wpedantic)
 
 include(CTest)
 if(BUILD_TESTING)
-  add_executable(simon_tests tests/test_main.cpp)
-  target_link_libraries(simon_tests PRIVATE simon_core)
+  FetchContent_Declare(
+    Catch2
+    GIT_REPOSITORY https://github.com/catchorg/Catch2.git
+    GIT_TAG        v3.8.1
+    GIT_SHALLOW    TRUE
+  )
+  FetchContent_MakeAvailable(Catch2)
+
+  add_executable(simon_tests
+    tests/test_config.cpp
+    tests/test_domain.cpp
+    tests/test_platform.cpp
+    tests/test_render.cpp
+    tests/test_tui.cpp
+  )
+  target_link_libraries(simon_tests PRIVATE simon_core Catch2::Catch2WithMain)
   target_compile_options(simon_tests PRIVATE -Wall -Wextra -Wpedantic)
-  add_test(NAME simon_tests COMMAND simon_tests)
+
+  list(APPEND CMAKE_MODULE_PATH ${catch2_SOURCE_DIR}/extras)
+  include(Catch)
+  catch_discover_tests(simon_tests)
 endif()
