@@ -233,104 +233,200 @@ ftxui::Element build_row(const DisplayRow& row,
   return hbox(std::move(cells));
 }
 
-ftxui::Element build_swap_pressure_row(const SystemMemory& sys) {
+struct MetricRowSpec {
+  std::string swatch;
+  ftxui::Color swatch_color = ftxui::Color::Default;
+  std::string metric;
+  std::string value;
+  ftxui::Color value_color = ftxui::Color::White;
+  std::string share;
+  ftxui::Element detail;
+};
+
+ftxui::Element build_metric_row(MetricRowSpec spec) {
   using namespace ftxui;
 
-  Elements chips;
+  constexpr int kMetricW = 11;
+  constexpr int kValueW = 9;
+  constexpr int kShareW = 7;
+
+  Element swatch_el = spec.swatch.empty()
+                          ? text("  ")
+                          : (text(spec.swatch + " ") | color(spec.swatch_color));
+  return hbox({
+      text(" "),
+      std::move(swatch_el),
+      text(pad_right_utf8(spec.metric, kMetricW)) | color(Color::GrayLight),
+      text("  "),
+      text(std::format("{:>{}}", spec.value, kValueW)) | bold | color(spec.value_color),
+      text("  "),
+      text(std::format("{:>{}}", spec.share, kShareW)) | dim,
+      text("  "),
+      std::move(spec.detail) | flex,
+      text(" "),
+  });
+}
+
+ftxui::Element build_summary_table_header(const SystemMemory& sys) {
+  using namespace ftxui;
+
+  std::string total_note = std::format("{} total", humanize_bytes(sys.total));
+  if (sys.free_bytes > 0) {
+    total_note += std::format("  ({} free)", humanize_bytes(sys.free_bytes));
+  }
+  return hbox({
+      text(" "),
+      text("  "),
+      text(pad_right_utf8("METRIC", 11)) | bold | color(Color::GrayLight),
+      text("  "),
+      text(std::format("{:>9}", "VALUE")) | bold | color(Color::White),
+      text("  "),
+      text(std::format("{:>7}", "SHARE")) | bold | color(Color::GrayLight),
+      text("  "),
+      text("DETAILS  ") | bold | color(Color::GrayLight),
+      text(total_note) | dim,
+      text(" "),
+  });
+}
+
+void append_memory_rows(const SystemMemory& sys, ftxui::Elements& rows) {
+  using namespace ftxui;
+
+  constexpr const char* kSwatch = "\xe2\x96\xa0";  // ■
+
+  rows.push_back(build_metric_row({
+      kSwatch, Color::Magenta, "Wired", humanize_bytes(sys.wired), Color::Magenta,
+      format_pct(sys.wired, sys.total), text("kernel & pinned") | dim,
+  }));
+  rows.push_back(build_metric_row({
+      kSwatch, Color::Yellow, "Anonymous", humanize_bytes(sys.anonymous), Color::Yellow,
+      format_pct(sys.anonymous, sys.total), text("app memory") | dim,
+  }));
+
+  std::string comp_detail = "compressed pages";
+  if (const double ratio = sys.compression_ratio(); ratio > 0.0) {
+    comp_detail = std::format("{:.1f}x ratio ({} uncompressed)",
+                              ratio,
+                              humanize_bytes(sys.compressor_uncompressed));
+  }
+  rows.push_back(build_metric_row({
+      kSwatch, Color::Cyan, "Compressor", humanize_bytes(sys.compressor), Color::Cyan,
+      format_pct(sys.compressor, sys.total), text(comp_detail) | dim,
+  }));
+  rows.push_back(build_metric_row({
+      kSwatch, Color::Green, "File cache", humanize_bytes(sys.file_cache), Color::Green,
+      format_pct(sys.file_cache, sys.total), text("reclaimable") | dim,
+  }));
+}
+
+void append_swap_and_pressure_rows(const SystemMemory& sys, ftxui::Elements& rows) {
+  using namespace ftxui;
+
   if (sys.swap.valid) {
     const Color sw_col = sys.swap.used >= 4ULL * kGiB
                              ? Color::RedLight
                              : (sys.swap.used > 0 ? Color::Yellow : Color::GrayLight);
-    chips.push_back(hbox({
-        text("swap: ") | bold,
-        text(humanize_bytes(sys.swap.used)) | bold | color(sw_col),
-        text(std::format(" / {} used  ", humanize_bytes(sys.swap.total))) | dim,
+    std::string detail = std::format("of {} total ({} free)",
+                                     humanize_bytes(sys.swap.total),
+                                     humanize_bytes(sys.swap.free_bytes));
+    rows.push_back(build_metric_row({
+        "", Color::Default, "Swap", humanize_bytes(sys.swap.used), sw_col,
+        format_pct(sys.swap.used, sys.swap.total), text(detail) | dim,
     }));
   }
+
   if (sys.pressure != MemoryPressureLevel::Unknown) {
     const Color p_col = pressure_color(sys.pressure);
-    std::string p_text(pressure_label(sys.pressure));
-    if (sys.memory_free_pct) {
-      p_text += std::format(" ({}% free)", *sys.memory_free_pct);
-    }
-    chips.push_back(hbox({
-        text("pressure: ") | bold,
-        text(p_text) | bold | color(p_col),
-        text("  "),
+    const std::string free_pct =
+        sys.memory_free_pct ? std::format("{}%", *sys.memory_free_pct) : "";
+    const std::string detail = sys.memory_free_pct ? "free headroom" : "";
+    rows.push_back(build_metric_row({
+        "", Color::Default, "Pressure", std::string(pressure_label(sys.pressure)), p_col,
+        free_pct, text(detail) | dim,
     }));
   }
-  return flexbox(std::move(chips), FlexboxConfig().Set(FlexboxConfig::Wrap::Wrap));
 }
 
-ftxui::Element build_gpu_row(const GpuInfo& gpu) {
+void append_gpu_row(const GpuInfo& gpu, ftxui::Elements& rows) {
   using namespace ftxui;
 
-  Elements chips;
-  chips.push_back(text("gpu: ") | bold);
-  if (gpu.valid) {
-    chips.push_back(hbox({
-        text(humanize_bytes(gpu.allocated)) | bold | color(Color::BlueLight),
-        text(" alloc ("),
-        text(humanize_bytes(gpu.in_use)) | color(Color::BlueLight),
-        text(" in use)  "),
-    }));
+  if (!gpu.valid && gpu.effective_ceiling() == 0) {
+    return;
   }
-  if (const auto ceiling = gpu.effective_ceiling(); ceiling > 0) {
+
+  const auto ceiling = gpu.effective_ceiling();
+  const std::string value = gpu.valid ? humanize_bytes(gpu.allocated) : "-";
+  const std::string share =
+      (gpu.valid && ceiling > 0) ? format_pct(gpu.allocated, ceiling) : "";
+
+  Elements parts;
+  if (gpu.valid) {
+    parts.push_back(text(std::format("{} in use  ", humanize_bytes(gpu.in_use))) |
+                    color(Color::BlueLight));
+  }
+  if (ceiling > 0) {
     std::string lim = std::format("limit {}", humanize_bytes(ceiling));
     if (auto head = gpu.headroom_bytes()) {
       lim += std::format(" ({} headroom)", humanize_bytes(*head));
     }
-    chips.push_back(text(lim + "  ") | dim);
+    parts.push_back(text(lim + "  ") | dim);
   }
   if (gpu.device_util_pct) {
     std::string util = std::format("{:.0f}% util", *gpu.device_util_pct);
     if (gpu.freq_mhz) util += std::format(" @ {:.0f}MHz", *gpu.freq_mhz);
     if (gpu.power_watts) util += std::format(" ({:.1f}W)", *gpu.power_watts);
-    chips.push_back(text(util) | color(Color::Cyan));
+    parts.push_back(text(util) | color(Color::Cyan));
   }
-  return flexbox(std::move(chips), FlexboxConfig().Set(FlexboxConfig::Wrap::Wrap));
+
+  rows.push_back(build_metric_row({
+      "", Color::Default, "GPU", value, Color::BlueLight, share,
+      flexbox(std::move(parts), FlexboxConfig().Set(FlexboxConfig::Wrap::Wrap)),
+  }));
 }
 
-ftxui::Element build_cpu_disk_rows(const SystemSnapshot& snap, const Config& cfg) {
+void append_cpu_and_disk_rows(const SystemSnapshot& snap,
+                              const Config& cfg,
+                              ftxui::Elements& rows) {
   using namespace ftxui;
 
-  Elements rows;
   if (cfg.show_cpu && snap.cpu.valid) {
-    Elements chips;
-    chips.push_back(hbox({
-        text("cpu: ") | bold,
-        text(std::format("{:.1f}%  ", snap.cpu.total_util_pct)) | bold | color(Color::GreenLight),
-    }));
-    for (const auto& tier : snap.cpu.tiers) {
-      std::string t = std::format("{} ({}c): {:.1f}%", tier.name, tier.core_count, tier.util_pct);
-      if (tier.freq_mhz) t += std::format(" @ {:.0f}MHz", *tier.freq_mhz);
-      chips.push_back(text(t + "  ") | color(Color::Green));
-    }
-    if (snap.cpu.power_watts) {
-      chips.push_back(text(std::format("{:.1f}W  ", *snap.cpu.power_watts)) | dim);
+    const std::string watts =
+        snap.cpu.power_watts ? std::format("{:.1f}W", *snap.cpu.power_watts) : "";
+    Elements parts;
+    for (const auto& t : snap.cpu.tiers) {
+      std::string s = std::format("{} ({}c): {:.1f}%", t.name, t.core_count, t.util_pct);
+      if (t.freq_mhz) s += std::format(" @ {:.0f}MHz", *t.freq_mhz);
+      parts.push_back(text(s + "  ") | color(Color::Green));
     }
     if (snap.telemetry.dram_bandwidth_gbps) {
-      chips.push_back(
-          text(std::format("DRAM {:.1f} GB/s", *snap.telemetry.dram_bandwidth_gbps)) |
-          color(Color::Cyan));
+      parts.push_back(text(std::format("DRAM {:.1f} GB/s", *snap.telemetry.dram_bandwidth_gbps)) |
+                      color(Color::Cyan));
     }
-    rows.push_back(flexbox(std::move(chips), FlexboxConfig().Set(FlexboxConfig::Wrap::Wrap)));
+    rows.push_back(build_metric_row({
+        "", Color::Default, "CPU", std::format("{:.1f}%", snap.cpu.total_util_pct),
+        Color::GreenLight, watts,
+        flexbox(std::move(parts), FlexboxConfig().Set(FlexboxConfig::Wrap::Wrap)),
+    }));
   }
 
   if (cfg.show_disk && snap.disk.valid) {
-    std::string d = "disk: ";
+    std::string val;
+    std::string detail;
     if (snap.disk.read_bps || snap.disk.write_bps) {
-      d += std::format("read {}  write {}",
-                       format_rate(snap.disk.read_bps.value_or(0.0)),
-                       format_rate(snap.disk.write_bps.value_or(0.0)));
+      const double rb = snap.disk.read_bps.value_or(0.0);
+      const double wb = snap.disk.write_bps.value_or(0.0);
+      val = format_rate(rb + wb);
+      detail = std::format("read {}  ·  write {}", format_rate(rb), format_rate(wb));
     } else {
-      d += std::format("read {}  write {} (lifetime)",
-                       humanize_bytes(snap.disk.total_read_bytes),
-                       humanize_bytes(snap.disk.total_write_bytes));
+      val = humanize_bytes(snap.disk.total_read_bytes + snap.disk.total_write_bytes);
+      detail = std::format("read {}  ·  write {} (lifetime)",
+                           humanize_bytes(snap.disk.total_read_bytes),
+                           humanize_bytes(snap.disk.total_write_bytes));
     }
-    rows.push_back(text(d) | color(Color::MagentaLight));
+    rows.push_back(build_metric_row({
+        "", Color::Default, "Disk", val, Color::MagentaLight, "", text(detail) | dim,
+    }));
   }
-  return vbox(std::move(rows));
 }
 
 }  // namespace
@@ -381,43 +477,35 @@ ftxui::Element build_system_summary_element(const SystemSnapshot& snap,
   using namespace ftxui;
 
   const SystemMemory& sys = snap.memory;
-  Elements rows;
-  rows.push_back(build_memory_stacked_bar(sys, std::min(width, 96)));
+  const int card_width = std::min(std::max(60, width), 104);
 
-  std::string comp_str = humanize_bytes(sys.compressor);
-  if (const double ratio = sys.compression_ratio(); ratio > 0.0) {
-    comp_str += std::format(" ({:.1f}x)", ratio);
+  Elements table_rows;
+  table_rows.push_back(build_summary_table_header(sys));
+  table_rows.push_back(separatorLight() | color(Color::GrayDark));
+  append_memory_rows(sys, table_rows);
+
+  Elements extra_rows;
+  append_swap_and_pressure_rows(sys, extra_rows);
+  append_gpu_row(sys.gpu, extra_rows);
+  append_cpu_and_disk_rows(snap, cfg, extra_rows);
+  if (!extra_rows.empty()) {
+    table_rows.push_back(separatorLight() | color(Color::GrayDark));
+    for (auto& row : extra_rows) {
+      table_rows.push_back(std::move(row));
+    }
   }
 
-  Elements chips = {
-      hbox({text("system: ") | bold,
-            text(humanize_bytes(sys.total)) | bold | color(Color::White),
-            text(" total  ")}),
-      hbox({text("\xe2\x96\xa0 ") | color(Color::Magenta),
-            text(humanize_bytes(sys.wired)) | color(Color::Magenta),
-            text(" wired  ")}),
-      hbox({text("\xe2\x96\xa0 ") | color(Color::Yellow),
-            text(humanize_bytes(sys.anonymous)) | color(Color::Yellow),
-            text(" anonymous  ")}),
-      hbox({text("\xe2\x96\xa0 ") | color(Color::Cyan),
-            text(comp_str) | color(Color::Cyan),
-            text(" compressor  ")}),
-      hbox({text("\xe2\x96\xa0 ") | color(Color::Green),
-            text(humanize_bytes(sys.file_cache)) | color(Color::Green),
-            text(" file cache (reclaimable)")}),
-  };
-  rows.push_back(flexbox(std::move(chips), FlexboxConfig().Set(FlexboxConfig::Wrap::Wrap)));
+  Element card = vbox(std::move(table_rows)) | borderStyled(LIGHT, Color::GrayDark) |
+                 size(WIDTH, EQUAL, card_width);
 
-  if (sys.swap.valid || sys.pressure != MemoryPressureLevel::Unknown) {
-    rows.push_back(build_swap_pressure_row(sys));
+  if (cfg.short_mode) {
+    return card;
   }
-  if (sys.gpu.valid || sys.gpu.effective_ceiling() > 0) {
-    rows.push_back(build_gpu_row(sys.gpu));
-  }
-  if ((cfg.show_cpu && snap.cpu.valid) || (cfg.show_disk && snap.disk.valid)) {
-    rows.push_back(build_cpu_disk_rows(snap, cfg));
-  }
-  return vbox(std::move(rows));
+
+  return vbox({
+      build_memory_stacked_bar(sys, card_width),
+      std::move(card),
+  });
 }
 
 std::string TableRenderer::render(const QuerySummary& summary,

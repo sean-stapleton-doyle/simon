@@ -303,11 +303,14 @@ void test_rendering_all_formats() {
   cfg.show_gpu = true;
   const QuerySummary summary = QueryEngine::run(snap.procs, cfg);
 
-  // Plain rendering includes swap, pressure, compression ratio, GPU limit & headroom & util.
+  // Plain rendering includes tabular memory, swap, pressure, compression ratio, GPU limit & util.
   const std::string plain = render_output(summary, snap, cfg, RenderContext{100, false});
-  EXPECT(plain.find("3.0x") != std::string::npos);
-  EXPECT(plain.find("swap: 2.0G / 8.0G used") != std::string::npos);
-  EXPECT(plain.find("pressure: warn (62% free)") != std::string::npos);
+  EXPECT(plain.find("METRIC") != std::string::npos);
+  EXPECT(plain.find("3.0x ratio") != std::string::npos);
+  EXPECT(plain.find("Swap") != std::string::npos);
+  EXPECT(plain.find("2.0G") != std::string::npos);
+  EXPECT(plain.find("Pressure") != std::string::npos);
+  EXPECT(plain.find("warn") != std::string::npos);
   EXPECT(plain.find("limit 36.0G (26.0G headroom)") != std::string::npos);
   EXPECT(plain.find("42% util") != std::string::npos);
 
@@ -315,7 +318,8 @@ void test_rendering_all_formats() {
   cfg.color = ColorMode::Always;
   const std::string rich = render_output(summary, snap, cfg, RenderContext{100, true});
   EXPECT(rich.find("ghostty") != std::string::npos);
-  EXPECT(rich.find("warn (62% free)") != std::string::npos);
+  EXPECT(rich.find("METRIC") != std::string::npos);
+  EXPECT(rich.find("warn") != std::string::npos);
   EXPECT(rich.find("26.0G headroom") != std::string::npos);
   EXPECT(rich.find("\x1b[") != std::string::npos);
   EXPECT(rich.find('\r') == std::string::npos);
@@ -576,16 +580,19 @@ void test_short_mode() {
   const SystemSnapshot snap = mon.sample(req);
   EXPECT(proc_calls == 0);
 
-  // Plain, FTXUI, and JSON short rendering omit table/rows and keep system/swap/gpu.
+  // Plain, FTXUI, and JSON short rendering omit process table/rows and keep tabular system stats.
   const std::string plain = render_output(QuerySummary{}, snap, cfg, RenderContext{100, false});
   EXPECT(plain.find("PID") == std::string::npos);
-  EXPECT(plain.find("system:") != std::string::npos);
-  EXPECT(plain.find("swap:") != std::string::npos);
-  EXPECT(plain.find("gpu:") != std::string::npos);
+  EXPECT(plain.find("METRIC") != std::string::npos);
+  EXPECT(plain.find("Wired") != std::string::npos);
+  EXPECT(plain.find("Swap") != std::string::npos);
+  EXPECT(plain.find("GPU") != std::string::npos);
 
   cfg.color = ColorMode::Always;
   const std::string rich = render_output(QuerySummary{}, snap, cfg, RenderContext{100, true});
   EXPECT(rich.find("PID") == std::string::npos);
+  EXPECT(rich.find("\xe2\x96\x88") == std::string::npos);  // no stacked bar in short mode
+  EXPECT(rich.find("METRIC") != std::string::npos);
   EXPECT(rich.find("48.0G") != std::string::npos);
   EXPECT(rich.find("26.0G headroom") != std::string::npos);
 

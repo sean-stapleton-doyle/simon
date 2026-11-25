@@ -57,20 +57,23 @@ sudo simon --gpu    # add per-process GPU memory column (sort with -s gpu)
 simon python --sum  # aggregate total for matching processes
 ```
 
-Example output (`simon 5 --cpu --disk`):
+Example output (`simon -S --cpu --disk`):
 
 ```text
-    PID   FOOTPRINT      CPU        DISK        PEAK  COMMAND
-  38469        2.6G     0.1%      0.0B/s        2.6G  com.apple.WebKit.WebContent
-  47550        2.1G     0.0%      0.0B/s        3.6G  rust-analyzer
-
-789 of 1121 processes readable, 42.9G total footprint
-
-system: 48.0G total | 3.7G wired | 26.0G anonymous | 4.6G compressor (6.3x) | 10.9G file cache (reclaimable)
-swap: 8.1G / 9.0G used | pressure: normal (82% free)
-gpu: 28.8G alloc (225.1M in use) | limit 37.4G (8.7G headroom) | 6% util (0.1W)
-cpu: 3.1% | Super (5c): 2.3% | Performance (10c): 3.6% | 0.5W
-disk: read 61.2K/s | write 0.0B/s
+┌──────────────────────────────────────────────────────────────────────────────┐
+│   METRIC           VALUE    SHARE  DETAILS  48.0G total  (1.7G free)         │
+├──────────────────────────────────────────────────────────────────────────────┤
+│ ■ Wired             3.7G     7.8%  kernel & pinned                           │
+│ ■ Anonymous        26.0G    54.2%  app memory                                │
+│ ■ Compressor        4.6G     9.6%  6.3x ratio (29.0G uncompressed)           │
+│ ■ File cache       10.9G    22.7%  reclaimable                               │
+├──────────────────────────────────────────────────────────────────────────────┤
+│   Swap              8.1G    89.5%  of 9.0G total (968.1M free)               │
+│   Pressure        normal      82%  free headroom                             │
+│   GPU              28.8G    77.0%  225.1M in use  limit 37.4G (8.7G headroom)│
+│   CPU               3.1%     0.5W  Super (5c): 2.3%  Performance (10c): 3.6% │
+│   Disk           61.2K/s           read 61.2K/s  ·  write 0.0B/s             │
+└──────────────────────────────────────────────────────────────────────────────┘
 ```
 
 Key flags:

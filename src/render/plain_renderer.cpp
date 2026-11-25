@@ -83,88 +83,122 @@ std::string format_row(const DisplayRow& row, const PlainLayout& l, const Config
   return line;
 }
 
+std::string format_plain_metric_row(std::string_view metric,
+                                    std::string_view value,
+                                    std::string_view share,
+                                    std::string_view detail) {
+  std::string line = std::format("{:<11}  {:>9}  {:>7}", metric, value, share);
+  if (!detail.empty()) {
+    line += std::format("  {}", detail);
+  }
+  return line;
+}
+
 std::string format_system_section(const SystemSnapshot& snap, const Config& cfg) {
   const SystemMemory& sys = snap.memory;
   std::ostringstream out;
-  out << std::format(
-      "system: {} total | {} wired | {} anonymous | {} compressor",
-      humanize_bytes(sys.total),
-      humanize_bytes(sys.wired),
-      humanize_bytes(sys.anonymous),
-      humanize_bytes(sys.compressor));
-  if (const double ratio = sys.compression_ratio(); ratio > 0.0) {
-    out << std::format(" ({:.1f}x)", ratio);
-  }
-  out << std::format(" | {} file cache (reclaimable)", humanize_bytes(sys.file_cache));
 
-  if (sys.swap.valid || sys.pressure != MemoryPressureLevel::Unknown) {
-    out << '\n';
-    bool need_sep = false;
-    if (sys.swap.valid) {
-      out << std::format("swap: {} / {} used",
-                         humanize_bytes(sys.swap.used),
-                         humanize_bytes(sys.swap.total));
-      need_sep = true;
-    }
-    if (sys.pressure != MemoryPressureLevel::Unknown) {
-      if (need_sep) out << " | ";
-      out << std::format("pressure: {}", pressure_label(sys.pressure));
-      if (sys.memory_free_pct) {
-        out << std::format(" ({}% free)", *sys.memory_free_pct);
-      }
-    }
+  std::string hdr_detail = std::format("{} total", humanize_bytes(sys.total));
+  if (sys.free_bytes > 0) {
+    hdr_detail += std::format(" ({} free)", humanize_bytes(sys.free_bytes));
+  }
+  out << format_plain_metric_row("METRIC", "VALUE", "SHARE", hdr_detail) << '\n';
+  out << format_plain_metric_row("Wired", humanize_bytes(sys.wired),
+                                 format_pct(sys.wired, sys.total), "kernel & pinned")
+      << '\n';
+  out << format_plain_metric_row("Anonymous", humanize_bytes(sys.anonymous),
+                                 format_pct(sys.anonymous, sys.total), "app memory")
+      << '\n';
+
+  std::string comp_detail = "compressed pages";
+  if (const double ratio = sys.compression_ratio(); ratio > 0.0) {
+    comp_detail = std::format("{:.1f}x ratio ({} uncompressed)",
+                              ratio,
+                              humanize_bytes(sys.compressor_uncompressed));
+  }
+  out << format_plain_metric_row("Compressor", humanize_bytes(sys.compressor),
+                                 format_pct(sys.compressor, sys.total), comp_detail)
+      << '\n';
+  out << format_plain_metric_row("File cache", humanize_bytes(sys.file_cache),
+                                 format_pct(sys.file_cache, sys.total), "reclaimable");
+
+  if (sys.swap.valid) {
+    out << '\n'
+        << format_plain_metric_row("Swap", humanize_bytes(sys.swap.used),
+                                   format_pct(sys.swap.used, sys.swap.total),
+                                   std::format("of {} total ({} free)",
+                                               humanize_bytes(sys.swap.total),
+                                               humanize_bytes(sys.swap.free_bytes)));
+  }
+
+  if (sys.pressure != MemoryPressureLevel::Unknown) {
+    const std::string pct = sys.memory_free_pct ? std::format("{}%", *sys.memory_free_pct) : "";
+    const std::string det = sys.memory_free_pct ? "free headroom" : "";
+    out << '\n'
+        << format_plain_metric_row("Pressure", pressure_label(sys.pressure), pct, det);
   }
 
   if (sys.gpu.valid || sys.gpu.effective_ceiling() > 0) {
-    out << "\ngpu: ";
-    bool need_sep = false;
-    if (sys.gpu.valid) {
-      out << std::format("{} alloc ({} in use)",
-                         humanize_bytes(sys.gpu.allocated),
-                         humanize_bytes(sys.gpu.in_use));
-      need_sep = true;
-    }
-    if (const auto ceiling = sys.gpu.effective_ceiling(); ceiling > 0) {
-      if (need_sep) out << " | ";
-      out << std::format("limit {}", humanize_bytes(ceiling));
+    const auto ceiling = sys.gpu.effective_ceiling();
+    const std::string val = sys.gpu.valid ? humanize_bytes(sys.gpu.allocated) : "-";
+    const std::string share =
+        (sys.gpu.valid && ceiling > 0) ? format_pct(sys.gpu.allocated, ceiling) : "";
+    std::string det;
+    auto add = [&](const std::string& part) {
+      if (!det.empty()) det += " | ";
+      det += part;
+    };
+    if (sys.gpu.valid) add(std::format("{} in use", humanize_bytes(sys.gpu.in_use)));
+    if (ceiling > 0) {
+      std::string lim = std::format("limit {}", humanize_bytes(ceiling));
       if (auto head = sys.gpu.headroom_bytes()) {
-        out << std::format(" ({} headroom)", humanize_bytes(*head));
+        lim += std::format(" ({} headroom)", humanize_bytes(*head));
       }
-      need_sep = true;
+      add(lim);
     }
     if (sys.gpu.device_util_pct) {
-      if (need_sep) out << " | ";
-      out << std::format("{:.0f}% util", *sys.gpu.device_util_pct);
-      if (sys.gpu.freq_mhz) out << std::format(" @ {:.0f}MHz", *sys.gpu.freq_mhz);
-      if (sys.gpu.power_watts) out << std::format(" ({:.1f}W)", *sys.gpu.power_watts);
+      std::string u = std::format("{:.0f}% util", *sys.gpu.device_util_pct);
+      if (sys.gpu.freq_mhz) u += std::format(" @ {:.0f}MHz", *sys.gpu.freq_mhz);
+      if (sys.gpu.power_watts) u += std::format(" ({:.1f}W)", *sys.gpu.power_watts);
+      add(u);
     }
+    out << '\n' << format_plain_metric_row("GPU", val, share, det);
   }
 
   if (cfg.show_cpu && snap.cpu.valid) {
-    out << std::format("\ncpu: {:.1f}%", snap.cpu.total_util_pct);
-    for (const auto& tier : snap.cpu.tiers) {
-      out << std::format(" | {} ({}c): {:.1f}%", tier.name, tier.core_count, tier.util_pct);
-      if (tier.freq_mhz) out << std::format(" @ {:.0f}MHz", *tier.freq_mhz);
-    }
-    if (snap.cpu.power_watts) {
-      out << std::format(" | {:.1f}W", *snap.cpu.power_watts);
+    const std::string watts =
+        snap.cpu.power_watts ? std::format("{:.1f}W", *snap.cpu.power_watts) : "";
+    std::string det;
+    for (std::size_t i = 0; i < snap.cpu.tiers.size(); ++i) {
+      if (i > 0) det += " | ";
+      const auto& t = snap.cpu.tiers[i];
+      det += std::format("{} ({}c): {:.1f}%", t.name, t.core_count, t.util_pct);
+      if (t.freq_mhz) det += std::format(" @ {:.0f}MHz", *t.freq_mhz);
     }
     if (snap.telemetry.dram_bandwidth_gbps) {
-      out << std::format(" | DRAM {:.1f} GB/s", *snap.telemetry.dram_bandwidth_gbps);
+      if (!det.empty()) det += " | ";
+      det += std::format("DRAM {:.1f} GB/s", *snap.telemetry.dram_bandwidth_gbps);
     }
+    out << '\n'
+        << format_plain_metric_row("CPU", std::format("{:.1f}%", snap.cpu.total_util_pct), watts,
+                                   det);
   }
 
   if (cfg.show_disk && snap.disk.valid) {
-    out << "\ndisk: ";
+    std::string val;
+    std::string det;
     if (snap.disk.read_bps || snap.disk.write_bps) {
-      out << std::format("read {} | write {}",
-                         format_rate(snap.disk.read_bps.value_or(0.0)),
-                         format_rate(snap.disk.write_bps.value_or(0.0)));
+      const double rb = snap.disk.read_bps.value_or(0.0);
+      const double wb = snap.disk.write_bps.value_or(0.0);
+      val = format_rate(rb + wb);
+      det = std::format("read {} | write {}", format_rate(rb), format_rate(wb));
     } else {
-      out << std::format("read {} | write {} (lifetime)",
-                         humanize_bytes(snap.disk.total_read_bytes),
-                         humanize_bytes(snap.disk.total_write_bytes));
+      val = humanize_bytes(snap.disk.total_read_bytes + snap.disk.total_write_bytes);
+      det = std::format("read {} | write {} (lifetime)",
+                        humanize_bytes(snap.disk.total_read_bytes),
+                        humanize_bytes(snap.disk.total_write_bytes));
     }
+    out << '\n' << format_plain_metric_row("Disk", val, "", det);
   }
 
   return out.str();
