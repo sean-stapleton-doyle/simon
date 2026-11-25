@@ -23,6 +23,13 @@ enum class ColorMode {
   Never,
 };
 
+enum class OutputFormat {
+  Auto,
+  Table,
+  Plain,
+  Json,
+};
+
 struct GroupRule {
   std::string pattern;
   std::string name;
@@ -40,6 +47,7 @@ struct Config {
   bool show_bars = true;
   bool show_system = true;
   bool plain = false;
+  OutputFormat output = OutputFormat::Auto;
   ColorMode color = ColorMode::Auto;
   std::optional<std::string> pattern;
   std::optional<std::filesystem::path> config_path;
@@ -59,6 +67,9 @@ std::string_view to_string(SortField field);
 
 std::optional<ColorMode> parse_color_mode(std::string_view value);
 std::string_view to_string(ColorMode mode);
+
+std::optional<OutputFormat> parse_output_format(std::string_view value);
+std::string_view to_string(OutputFormat format);
 
 // Discovers the first existing config file in standard locations:
 //   1. $XDG_CONFIG_HOME/realmem/config.toml

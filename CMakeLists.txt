@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(realmem VERSION 0.1.1 LANGUAGES CXX)
+project(realmem VERSION 0.1.2 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -23,6 +23,9 @@ set(CLI11_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 set(CLI11_BUILD_DOCS OFF CACHE BOOL "" FORCE)
 set(CLI11_INSTALL OFF CACHE BOOL "" FORCE)
 
+set(JSON_BuildTests OFF CACHE BOOL "" FORCE)
+set(JSON_Install OFF CACHE BOOL "" FORCE)
+
 FetchContent_Declare(
   ftxui
   GIT_REPOSITORY https://github.com/ArthurSonzogni/FTXUI.git
@@ -44,11 +47,31 @@ FetchContent_Declare(
   GIT_SHALLOW    TRUE
 )
 
-FetchContent_MakeAvailable(ftxui cli11 tomlplusplus)
+FetchContent_Declare(
+  nlohmann_json
+  URL https://github.com/nlohmann/json/releases/download/v3.12.0/json.tar.xz
+  DOWNLOAD_EXTRACT_TIMESTAMP TRUE
+)
+
+FetchContent_MakeAvailable(ftxui cli11 tomlplusplus nlohmann_json)
+
+# Embed skills/realmem/SKILL.md directly into the binary for `realmem --skill`.
+file(READ "${CMAKE_CURRENT_SOURCE_DIR}/skills/realmem/SKILL.md" REALMEM_SKILL_CONTENT)
+set_property(
+  DIRECTORY
+  APPEND
+  PROPERTY CMAKE_CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/skills/realmem/SKILL.md"
+)
+configure_file(
+  "${CMAKE_CURRENT_SOURCE_DIR}/src/skill_doc.hpp.in"
+  "${CMAKE_CURRENT_BINARY_DIR}/generated/skill_doc.hpp"
+  @ONLY
+)
 
 add_library(realmem_core STATIC
   src/config.cpp
   src/gpu.cpp
+  src/json_render.cpp
   src/model.cpp
   src/process.cpp
   src/render.cpp
@@ -56,6 +79,7 @@ add_library(realmem_core STATIC
 
 target_include_directories(realmem_core PUBLIC
   ${CMAKE_CURRENT_SOURCE_DIR}/src
+  ${CMAKE_CURRENT_BINARY_DIR}/generated
 )
 
 target_link_libraries(realmem_core PUBLIC
@@ -63,6 +87,7 @@ target_link_libraries(realmem_core PUBLIC
   ftxui::screen
   CLI11::CLI11
   tomlplusplus::tomlplusplus
+  nlohmann_json::nlohmann_json
   "-framework IOKit"
   "-framework CoreFoundation"
 )

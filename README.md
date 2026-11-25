@@ -50,6 +50,7 @@ realmem               # top 20 processes (styled in TTY, plain when piped)
 realmem 40            # top 40 processes
 realmem -g            # group helper/renderer processes by application
 realmem -s peak -l    # sort by lifetime peak with full command lines
+realmem -o json       # machine-readable JSON for scripts and LLMs
 sudo realmem --gpu    # add per-process GPU memory column (sort with -s gpu)
 realmem python        # filter by extended regex over full command lines
 realmem python --sum  # aggregate total for matching processes
@@ -84,9 +85,19 @@ Key flags:
 | `-l, --long` | Show full command line column |
 | `-c, --case` | Case-sensitive regex matching |
 | `--sum` | Print only the aggregate total for matches |
+| `-o, --output FMT` | `auto` (default), `table`, `plain`, or `json` |
 | `--bars` / `--no-bars` | Toggle inline usage bars |
 | `--color MODE` | `auto`, `always`, or `never` (`--plain` disables FTXUI styling) |
+| `--skill` | Print the embedded agent `SKILL.md` document |
 | `--config PATH` / `--no-config` | Override or disable TOML config |
+
+### Agent skill
+
+Install the bundled [SKILL.md](skills/realmem/SKILL.md) so coding agents know how to query `realmem -o json`:
+
+```sh
+mkdir -p ~/.agents/skills/realmem && realmem --skill > ~/.agents/skills/realmem/SKILL.md
+```
 
 ## Configuration
 
@@ -109,6 +120,7 @@ case_sensitive = false
 bars = true
 system = true
 color = "auto"         # auto | always | never
+output = "auto"        # auto | table | plain | json
 plain = false
 
 # Optional custom regex rules evaluated first under -g/--group

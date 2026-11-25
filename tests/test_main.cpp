@@ -4,6 +4,8 @@
 #include "process.hpp"
 #include "render.hpp"
 
+#include <nlohmann/json.hpp>
+
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -335,6 +337,88 @@ void test_rendering_plain_and_ftxui() {
   EXPECT(hinted.find("per-process GPU requires sudo") != std::string::npos);
 }
 
+void test_json_output_and_skill() {
+  using namespace realmem;
+  using json = nlohmann::json;
+
+  // CLI -o json and TOML output = "json".
+  const char* argv_json[] = {"realmem", "--no-config", "-o", "json", "5"};
+  const ParseResult r_json = parse_args_and_config(5, argv_json);
+  EXPECT(!r_json.should_exit);
+  EXPECT(r_json.config.output == OutputFormat::Json);
+  EXPECT(r_json.config.count == 5);
+
+  Config toml_cfg;
+  load_toml_string("output = \"json\"\n", toml_cfg);
+  EXPECT(toml_cfg.output == OutputFormat::Json);
+
+  // --skill exits cleanly and outputs embedded SKILL.md frontmatter.
+  const char* argv_skill[] = {"realmem", "--skill"};
+  const ParseResult r_skill = parse_args_and_config(2, argv_skill);
+  EXPECT(r_skill.should_exit);
+  EXPECT(r_skill.exit_code == 0);
+  EXPECT(r_skill.message.find("name: realmem") != std::string::npos);
+  EXPECT(r_skill.message.find("--output json") != std::string::npos);
+
+  // Build realistic snapshot + system stats and verify parsed JSON schema.
+  Snapshot snap;
+  snap.total_pids = 10;
+  snap.processes = {
+      ProcessInfo{42, 600, 900, 256, "ghostty", "/Applications/Ghostty.app/Contents/MacOS/ghostty",
+                  "ghostty --title demo"},
+      ProcessInfo{99, 120, 150, std::nullopt, "WindowServer", "", ""},
+  };
+  snap.total_footprint = 720;
+
+  SystemMemory sys;
+  sys.total = 48000;
+  sys.wired = 6000;
+  sys.anonymous = 18000;
+  sys.compressor = 3000;
+  sys.file_cache = 12000;
+  sys.free_bytes = 9000;
+  sys.gpu.allocated = 2000;
+  sys.gpu.in_use = 500;
+  sys.gpu.valid = true;
+  sys.valid = true;
+
+  Config cfg;
+  cfg.output = OutputFormat::Json;
+  cfg.show_gpu = true;
+  const QuerySummary summary = build_query_summary(snap, cfg);
+  const json parsed = json::parse(render_output(summary, sys, cfg, RenderContext{80, true}));
+
+  EXPECT(parsed["mode"] == "processes");
+  EXPECT(parsed["summary"]["readable_processes"] == 2);
+  EXPECT(parsed["summary"]["total_processes"] == 10);
+  EXPECT(parsed["summary"]["total_footprint_bytes"] == 720);
+  EXPECT(parsed["summary"]["gpu_readable_processes"] == 1);
+  EXPECT(parsed["rows"].size() == 2);
+  EXPECT(parsed["rows"][0]["pid"] == 42);
+  EXPECT(parsed["rows"][0]["footprint_bytes"] == 600);
+  EXPECT(parsed["rows"][0]["gpu_bytes"] == 256);
+  EXPECT(parsed["rows"][0]["cmdline"] == "ghostty --title demo");
+  EXPECT(parsed["rows"][1]["gpu_bytes"].is_null());
+  EXPECT(parsed["system"]["wired_bytes"] == 6000);
+  EXPECT(parsed["system"]["gpu"]["allocated_bytes"] == 2000);
+  EXPECT(parsed["system"]["gpu"]["in_use_bytes"] == 500);
+
+  // Grouped + --sum JSON omits rows/system and populates pattern totals.
+  Config sum_cfg;
+  sum_cfg.output = OutputFormat::Json;
+  sum_cfg.group = true;
+  sum_cfg.pattern = "ghostty";
+  sum_cfg.sum_only = true;
+  const QuerySummary sum_summary = build_query_summary(snap, sum_cfg);
+  const json sum_json =
+      json::parse(render_output(sum_summary, sys, sum_cfg, RenderContext{80, false}));
+  EXPECT(sum_json["mode"] == "grouped");
+  EXPECT(sum_json["summary"]["matched_processes"] == 1);
+  EXPECT(sum_json["summary"]["matched_footprint_bytes"] == 600);
+  EXPECT(!sum_json.contains("rows"));
+  EXPECT(!sum_json.contains("system"));
+}
+
 }  // namespace
 
 int main() {
@@ -345,6 +429,7 @@ int main() {
   test_grouping_filtering_and_sorting();
   test_config_discovery();
   test_rendering_plain_and_ftxui();
+  test_json_output_and_skill();
 
   if (g_failures == 0) {
     std::cout << "All tests passed.\n";

@@ -35,8 +35,8 @@ jobs:
       - name: Package release archive
         run: |
           mkdir -p dist/pkg
-          cp build/realmem LICENSE README.md dist/pkg/
-          tar -C dist/pkg -czf dist/realmem-macos-arm64.tar.gz realmem LICENSE README.md
+          cp build/realmem LICENSE README.md skills/realmem/SKILL.md dist/pkg/
+          tar -C dist/pkg -czf dist/realmem-macos-arm64.tar.gz realmem LICENSE README.md SKILL.md
           (cd dist && shasum -a 256 realmem-macos-arm64.tar.gz > SHA256SUMS.txt)
           cat dist/SHA256SUMS.txt
 

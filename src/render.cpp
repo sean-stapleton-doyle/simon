@@ -1,5 +1,7 @@
 #include "render.hpp"
 
+#include "json_render.hpp"
+
 #include <ftxui/dom/elements.hpp>
 #include <ftxui/screen/color.hpp>
 #include <ftxui/screen/screen.hpp>
@@ -559,8 +561,18 @@ std::string render_output(const QuerySummary& summary,
                           const SystemMemory& sys,
                           const Config& cfg,
                           const RenderContext& ctx) {
-  return use_rich_output(cfg, ctx) ? render_ftxui(summary, sys, cfg, ctx)
-                                   : render_plain(summary, sys, cfg, ctx);
+  switch (cfg.output) {
+    case OutputFormat::Json:
+      return render_json(summary, sys, cfg);
+    case OutputFormat::Plain:
+      return render_plain(summary, sys, cfg, ctx);
+    case OutputFormat::Table:
+      return render_ftxui(summary, sys, cfg, ctx);
+    case OutputFormat::Auto:
+      return use_rich_output(cfg, ctx) ? render_ftxui(summary, sys, cfg, ctx)
+                                       : render_plain(summary, sys, cfg, ctx);
+  }
+  return render_plain(summary, sys, cfg, ctx);
 }
 
 }  // namespace realmem

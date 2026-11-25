@@ -6,6 +6,7 @@ on:
     paths:
       - "src/**"
       - "tests/**"
+      - "skills/**"
       - "CMakeLists.txt"
       - "Makefile"
       - ".github/workflows/**"
@@ -14,6 +15,7 @@ on:
     paths:
       - "src/**"
       - "tests/**"
+      - "skills/**"
       - "CMakeLists.txt"
       - "Makefile"
       - ".github/workflows/**"
@@ -41,5 +43,6 @@ jobs:
       - name: Smoke test binary
         run: |
           ./build/realmem --help
+          ./build/realmem --skill | head -n 5
           ./build/realmem 5 --plain --no-config
-          ./build/realmem -g 5 --plain --no-config
+          ./build/realmem -g 5 -o json --no-config

@@ -1,0 +1,10 @@
+#pragma once
+
+#include <string_view>
+
+namespace realmem {
+
+inline constexpr std::string_view kSkillDocument =
+    R"REALMEM_SKILL(@REALMEM_SKILL_CONTENT@)REALMEM_SKILL";
+
+}  // namespace realmem

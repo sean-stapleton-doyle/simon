@@ -1,5 +1,7 @@
 #include "config.hpp"
 
+#include "skill_doc.hpp"
+
 #include <CLI/CLI.hpp>
 #include <toml++/toml.hpp>
 
@@ -19,6 +21,7 @@ struct CliValues {
   std::optional<int> count;
   std::optional<std::string> match;
   std::optional<std::string> sort;
+  std::optional<std::string> output;
   std::optional<std::string> color;
   std::optional<std::string> config_path;
   std::optional<bool> reverse;
@@ -30,6 +33,7 @@ struct CliValues {
   std::optional<bool> show_bars;
   std::optional<bool> show_system;
   std::optional<bool> plain;
+  bool print_skill = false;
   bool no_config = false;
   std::vector<std::string> positional;
 };
@@ -142,6 +146,15 @@ void apply_toml_table(const toml::table& tbl, Config& cfg) {
     cfg.color = *parsed;
   }
 
+  if (auto out_str = read_toml_string(tbl, "output")) {
+    auto parsed = parse_output_format(*out_str);
+    if (!parsed) {
+      throw std::runtime_error(std::format(
+          "invalid output value '{}' (expected auto, table, plain, or json)", *out_str));
+    }
+    cfg.output = *parsed;
+  }
+
   if (const auto* defaults = tbl.get_as<toml::table>("defaults")) {
     apply_toml_table(*defaults, cfg);
   }
@@ -158,6 +171,7 @@ void register_cli_options(CLI::App& app, CliValues& cli) {
       ->check(CLI::NonNegativeNumber);
   app.add_option("-m,--match", cli.match, "Filter by extended regex");
   app.add_option("-s,--sort", cli.sort, "Sort by: footprint, peak, gpu, pid, name, count");
+  app.add_option("-o,--output", cli.output, "Output format: auto, table, plain, json");
   app.add_option("--color", cli.color, "Color output: auto, always, never");
   app.add_option("--config", cli.config_path, "Path to TOML config file");
 
@@ -174,6 +188,7 @@ void register_cli_options(CLI::App& app, CliValues& cli) {
   set_flag("--no-bars", "Hide inline memory usage bars", cli.show_bars, false);
   set_flag("--no-system", "Hide the system memory summary", cli.show_system, false);
   set_flag("--plain", "Plain text output without FTXUI styling", cli.plain, true);
+  app.add_flag("--skill", cli.print_skill, "Print the agent SKILL.md document and exit");
   app.add_flag("--no-config", cli.no_config, "Ignore any TOML config file");
 
   app.add_option("args", cli.positional, "Optional row count and/or extended regex")
@@ -217,6 +232,17 @@ void apply_cli_overrides(const CliValues& cli, Config& cfg) {
           std::format("unknown color mode '{}' (expected auto, always, or never)", *cli.color));
     }
     cfg.color = *parsed;
+  }
+  if (cli.output) {
+    auto parsed = parse_output_format(*cli.output);
+    if (!parsed) {
+      throw std::runtime_error(std::format(
+          "unknown output format '{}' (expected auto, table, plain, or json)", *cli.output));
+    }
+    cfg.output = *parsed;
+    if (*parsed != OutputFormat::Plain) {
+      cfg.plain = false;
+    }
   }
   if (cli.reverse) {
     cfg.reverse = *cli.reverse;
@@ -339,6 +365,37 @@ std::string_view to_string(ColorMode mode) {
   return "auto";
 }
 
+std::optional<OutputFormat> parse_output_format(std::string_view value) {
+  const std::string lower = to_lower(value);
+  if (lower == "auto") {
+    return OutputFormat::Auto;
+  }
+  if (lower == "table" || lower == "rich" || lower == "ftxui") {
+    return OutputFormat::Table;
+  }
+  if (lower == "plain" || lower == "text") {
+    return OutputFormat::Plain;
+  }
+  if (lower == "json") {
+    return OutputFormat::Json;
+  }
+  return std::nullopt;
+}
+
+std::string_view to_string(OutputFormat format) {
+  switch (format) {
+    case OutputFormat::Auto:
+      return "auto";
+    case OutputFormat::Table:
+      return "table";
+    case OutputFormat::Plain:
+      return "plain";
+    case OutputFormat::Json:
+      return "json";
+  }
+  return "auto";
+}
+
 std::optional<std::filesystem::path> discover_config_path(const char* xdg_config_home,
                                                           const char* home) {
   namespace fs = std::filesystem;
@@ -432,6 +489,10 @@ ParseResult parse_args_and_config(int argc, const char* const* argv) {
   } catch (const CLI::ParseError& e) {
     return ParseResult{
         {}, 2, true, std::format("realmem: {}\nRun 'realmem --help' for usage.\n", e.what())};
+  }
+
+  if (cli.print_skill) {
+    return ParseResult{{}, 0, true, std::string(kSkillDocument)};
   }
 
   Config cfg;
