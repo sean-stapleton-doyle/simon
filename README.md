@@ -1,3 +1,5 @@
+<div align="center">
+
 # realmem
 
 [![CI](https://github.com/sean-stapleton-doyle/realmem/actions/workflows/ci.yml/badge.svg)](https://github.com/sean-stapleton-doyle/realmem/actions/workflows/ci.yml)
@@ -5,6 +7,8 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 Rank macOS processes by physical memory footprint (`phys_footprint`) instead of resident set size (RSS).
+
+</div>
 
 ## Why
 
