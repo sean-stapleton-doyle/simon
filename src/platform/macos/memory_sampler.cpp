@@ -40,6 +40,15 @@ std::uint64_t query_memsize() {
   return memsize;
 }
 
+template <typename VmStats>
+std::uint64_t read_swapped_count(const VmStats& vm) {
+  if constexpr (requires { vm.swapped_count; }) {
+    return static_cast<std::uint64_t>(vm.swapped_count);
+  } else {
+    return 0;
+  }
+}
+
 }  // namespace
 
 MemoryPressureLevel parse_pressure_level(int raw) {
@@ -81,7 +90,7 @@ SystemMemory MacMemorySampler::sample() {
   sys.file_cache = to_bytes(vm.external_page_count);
   sys.purgeable = to_bytes(vm.purgeable_count);
   sys.free_bytes = to_bytes(vm.free_count);
-  sys.swapped_pages_bytes = to_bytes(vm.swapped_count);
+  sys.swapped_pages_bytes = to_bytes(read_swapped_count(vm));
   sys.swapins = to_bytes(vm.swapins);
   sys.swapouts = to_bytes(vm.swapouts);
   sys.compressions = vm.compressions;
