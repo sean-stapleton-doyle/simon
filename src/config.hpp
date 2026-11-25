@@ -11,6 +11,7 @@ namespace realmem {
 enum class SortField {
   Footprint,
   Peak,
+  Gpu,
   Pid,
   Name,
   Count,
@@ -33,6 +34,7 @@ struct Config {
   bool reverse = false;
   bool group = false;
   bool long_format = false;
+  bool show_gpu = false;
   bool case_sensitive = false;
   bool sum_only = false;
   bool show_bars = true;
@@ -69,6 +71,9 @@ std::optional<std::filesystem::path> discover_config_path(
 // Loads TOML settings into `cfg`, throwing std::runtime_error on parse/type errors.
 void load_toml_string(std::string_view content, Config& cfg);
 void load_toml_file(const std::filesystem::path& path, Config& cfg);
+
+// Validates semantic consistency of a merged Config; returns an error message or std::nullopt.
+std::optional<std::string> validate_config(const Config& cfg);
 
 // Parses CLI arguments and merges with TOML config (precedence: CLI > TOML > defaults).
 ParseResult parse_args_and_config(int argc, const char* const* argv);

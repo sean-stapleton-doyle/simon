@@ -1,5 +1,7 @@
 #pragma once
 
+#include "gpu.hpp"
+
 #include <sys/types.h>
 
 #include <cstddef>
@@ -13,11 +15,12 @@ namespace realmem {
 
 struct ProcessInfo {
   pid_t pid = 0;
-  std::uint64_t footprint = 0;     // bytes (ri_phys_footprint)
-  std::uint64_t lifetime_max = 0;  // bytes (ri_lifetime_max_phys_footprint)
-  std::string name;                // proc_name() or "<pid N>"
-  std::string path;                // proc_pidpath(), empty if not requested/unreadable
-  std::string cmdline;             // sanitized full argv, empty if not requested/unreadable
+  std::uint64_t footprint = 0;                   // bytes (ri_phys_footprint)
+  std::uint64_t lifetime_max = 0;                // bytes (ri_lifetime_max_phys_footprint)
+  std::optional<std::uint64_t> gpu_footprint;    // bytes (TASK_VM_INFO graphics ledger)
+  std::string name;                              // proc_name() or "<pid N>"
+  std::string path;                              // proc_pidpath(), empty if not requested
+  std::string cmdline;                           // sanitized full argv, empty if not requested
 };
 
 struct Snapshot {
@@ -33,6 +36,7 @@ struct SystemMemory {
   std::uint64_t compressor = 0;  // compressor_page_count * page
   std::uint64_t file_cache = 0;  // external_page_count * page (reclaimable)
   std::uint64_t free_bytes = 0;  // free_count * page
+  SystemGpuMemory gpu;
   bool valid = false;
 };
 
@@ -43,9 +47,10 @@ std::string sanitize_cmdline(std::string_view raw);
 // Enumerates all processes accessible to the current UID via proc_pid_rusage().
 Snapshot collect_processes(bool need_cmdline,
                            bool need_path,
+                           bool need_gpu = false,
                            std::optional<pid_t> exclude_pid = std::nullopt);
 
-// Collects host-wide VM statistics (total, wired, anonymous, compressor, file cache).
+// Collects host-wide VM and IOKit GPU memory statistics.
 SystemMemory collect_system_memory();
 
 bool stdout_is_tty();

@@ -27,10 +27,11 @@ int main(int argc, char** argv) {
         cfg.pattern.has_value() || (cfg.long_format && !cfg.group) ||
         (cfg.group && !cfg.group_rules.empty());
     const bool need_path = cfg.group;
+    const bool need_gpu = cfg.show_gpu || cfg.sort == SortField::Gpu;
     const std::optional<pid_t> exclude_self =
         cfg.pattern.has_value() ? std::optional<pid_t>(getpid()) : std::nullopt;
 
-    const Snapshot snap = collect_processes(need_cmdline, need_path, exclude_self);
+    const Snapshot snap = collect_processes(need_cmdline, need_path, need_gpu, exclude_self);
     const SystemMemory sys =
         (!cfg.sum_only && cfg.show_system) ? collect_system_memory() : SystemMemory{};
     const QuerySummary summary = build_query_summary(snap, cfg);

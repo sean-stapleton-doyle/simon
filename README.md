@@ -50,6 +50,7 @@ realmem               # top 20 processes (styled in TTY, plain when piped)
 realmem 40            # top 40 processes
 realmem -g            # group helper/renderer processes by application
 realmem -s peak -l    # sort by lifetime peak with full command lines
+sudo realmem --gpu    # add per-process GPU memory column (sort with -s gpu)
 realmem python        # filter by extended regex over full command lines
 realmem python --sum  # aggregate total for matching processes
 sudo realmem          # include other users' processes (e.g. WindowServer)
@@ -67,6 +68,7 @@ Example output (`realmem -g 5`):
 858 of 1189 processes readable across 453 apps, 42.6G total footprint
 
 system: 48.0G total | 3.9G wired | 25.8G anonymous | 4.6G compressor | 10.6G file cache (reclaimable)
+gpu: 2.4G alloc (512.0M in use)
 ```
 
 Key flags:
@@ -75,9 +77,10 @@ Key flags:
 | --- | --- |
 | `-n, --count N` | Max rows to print (default `20`, `0` for all) |
 | `-m, --match RE` | Filter by extended regex (or pass a bare non-numeric arg) |
-| `-s, --sort FIELD` | Sort by `footprint`, `peak`, `pid`, `name`, or `count` (with `-g`) |
+| `-s, --sort FIELD` | Sort by `footprint`, `peak`, `gpu`, `pid`, `name`, or `count` (with `-g`) |
 | `-r, --reverse` | Reverse sort order |
 | `-g, --group` | Aggregate helpers by `.app` bundle / process name |
+| `--gpu` / `--no-gpu` | Show per-process GPU memory column (requires `sudo`) |
 | `-l, --long` | Show full command line column |
 | `-c, --case` | Case-sensitive regex matching |
 | `--sum` | Print only the aggregate total for matches |
@@ -97,9 +100,10 @@ CLI flags always override config values.
 
 ```toml
 count = 25
-sort = "footprint"     # footprint | peak | pid | name | count
+sort = "footprint"     # footprint | peak | gpu | pid | name | count
 reverse = false
 group = false
+gpu = false
 long = false
 case_sensitive = false
 bars = true
@@ -118,4 +122,4 @@ name = "ML Trainer"
 - **Why `phys_footprint`**: It is the kernel's ledger metric for true memory pressure—excluding clean reclaimable file-backed pages (the OS disk cache), accounting for compressed pages at compressed size, and including IOKit/GPU allocations.
 - **Why `proc_pid_rusage()`**: Reading `ri_phys_footprint` and `ri_lifetime_max_phys_footprint` via `proc_pid_rusage()` (`<libproc.h>`) works for all same-UID processes without `sudo`. The Mach alternative (`task_info(TASK_VM_INFO)`) requires `task_for_pid()`, which needs root or `com.apple.system-task-ports`.
 - **Command lines & grouping**: Full `argv` is read via `sysctl(CTL_KERN, KERN_PROCARGS2)` (also unprivileged for same-UID processes), and `-g` resolves the outermost `.app` bundle via `proc_pidpath()` so browser/Electron helpers collapse under their parent app.
-- **System summary**: Host totals come from `host_statistics64(HOST_VM_INFO64)`, separating `wire_count`, `internal_page_count` (anonymous), `compressor_page_count`, and `external_page_count` (reclaimable file cache).
+- **System & GPU memory**: Host totals come from `host_statistics64(HOST_VM_INFO64)`, separating `wire_count`, `internal_page_count` (anonymous), `compressor_page_count`, and `external_page_count` (reclaimable file cache). System-wide GPU memory (`Alloc system memory` and `In use system memory`) is read unprivileged from IOKit `IOAccelerator` `PerformanceStatistics`; per-process `--gpu` reads `ledger_tag_graphics_footprint` (+ compressed) via `task_for_pid()` + `task_info(TASK_VM_INFO)`, which requires `sudo` (and is blocked by SIP on Apple-signed system binaries).

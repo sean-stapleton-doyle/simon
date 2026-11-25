@@ -57,15 +57,29 @@ std::size_t query_argmax() {
   return static_cast<std::size_t>(argmax);
 }
 
+std::vector<pid_t> list_all_pids() {
+  int nbytes = proc_listpids(PROC_ALL_PIDS, 0, nullptr, 0);
+  if (nbytes <= 0) {
+    throw std::runtime_error(std::format("proc_listpids failed: {}", std::strerror(errno)));
+  }
+
+  // Headroom because processes can spawn between the two calls.
+  std::vector<pid_t> pids(static_cast<std::size_t>(nbytes) * 2 / sizeof(pid_t) + 16, 0);
+  nbytes = proc_listpids(
+      PROC_ALL_PIDS, 0, pids.data(), static_cast<int>(pids.size() * sizeof(pid_t)));
+  if (nbytes <= 0) {
+    throw std::runtime_error(std::format("proc_listpids failed: {}", std::strerror(errno)));
+  }
+  pids.resize(static_cast<std::size_t>(nbytes) / sizeof(pid_t));
+  return pids;
+}
+
 // Full argv via KERN_PROCARGS2. Same-uid only, no root needed.
 // Layout: [int argc][exec path][NUL padding][argv[0..argc-1]].
 std::string cmdline_for(pid_t pid, std::vector<char>& scratch) {
   int mib[3] = {CTL_KERN, KERN_PROCARGS2, pid};
   std::size_t len = scratch.size();
-  if (sysctl(mib, 3, scratch.data(), &len, nullptr, 0) != 0) {
-    return {};
-  }
-  if (len < sizeof(int)) {
+  if (sysctl(mib, 3, scratch.data(), &len, nullptr, 0) != 0 || len < sizeof(int)) {
     return {};
   }
 
@@ -77,11 +91,10 @@ std::string cmdline_for(pid_t pid, std::vector<char>& scratch) {
 
   const char* p = scratch.data() + sizeof(int);
   const char* end = scratch.data() + len;
-
-  while (p < end && *p != '\0') {  // skip the exec path
+  while (p < end && *p != '\0') {
     ++p;
   }
-  while (p < end && *p == '\0') {  // skip alignment padding
+  while (p < end && *p == '\0') {
     ++p;
   }
 
@@ -104,19 +117,41 @@ std::string cmdline_for(pid_t pid, std::vector<char>& scratch) {
 std::string path_for(pid_t pid) {
   char buf[PROC_PIDPATHINFO_MAXSIZE];
   const int len = proc_pidpath(pid, buf, sizeof(buf));
-  if (len <= 0) {
-    return {};
-  }
-  return std::string(buf, static_cast<std::size_t>(len));
+  return len > 0 ? std::string(buf, static_cast<std::size_t>(len)) : std::string{};
 }
 
 std::string name_for(pid_t pid) {
   char buf[2 * MAXCOMLEN + 1];
   const int len = proc_name(pid, buf, static_cast<std::uint32_t>(sizeof(buf)));
-  if (len <= 0) {
-    return std::format("<pid {}>", pid);
+  return len > 0 ? std::string(buf) : std::format("<pid {}>", pid);
+}
+
+std::optional<ProcessInfo> sample_process(pid_t pid,
+                                          bool need_cmdline,
+                                          bool need_path,
+                                          bool need_gpu,
+                                          std::vector<char>& scratch) {
+  std::uint64_t fp = 0;
+  std::uint64_t peak = 0;
+  if (!footprint_for(pid, fp, peak)) {
+    return std::nullopt;
   }
-  return std::string(buf);
+
+  ProcessInfo proc;
+  proc.pid = pid;
+  proc.footprint = fp;
+  proc.lifetime_max = peak;
+  proc.name = name_for(pid);
+  if (need_path) {
+    proc.path = path_for(pid);
+  }
+  if (need_cmdline) {
+    proc.cmdline = cmdline_for(pid, scratch);
+  }
+  if (need_gpu) {
+    proc.gpu_footprint = collect_process_gpu_footprint(pid);
+  }
+  return proc;
 }
 
 }  // namespace
@@ -125,42 +160,25 @@ std::string sanitize_cmdline(std::string_view raw) {
   std::string out;
   out.reserve(raw.size());
   for (unsigned char ch : raw) {
-    if (ch < 0x20 || ch == 0x7f) {
-      out.push_back(' ');
-    } else {
-      out.push_back(static_cast<char>(ch));
-    }
+    out.push_back((ch < 0x20 || ch == 0x7f) ? ' ' : static_cast<char>(ch));
   }
   return out;
 }
 
 Snapshot collect_processes(bool need_cmdline,
                            bool need_path,
+                           bool need_gpu,
                            std::optional<pid_t> exclude_pid) {
-  int nbytes = proc_listpids(PROC_ALL_PIDS, 0, nullptr, 0);
-  if (nbytes <= 0) {
-    throw std::runtime_error(std::format("proc_listpids failed: {}", std::strerror(errno)));
-  }
-
-  // Headroom because processes can spawn between the two calls.
-  std::vector<pid_t> pids(static_cast<std::size_t>(nbytes) * 2 / sizeof(pid_t) + 16, 0);
-  nbytes = proc_listpids(
-      PROC_ALL_PIDS, 0, pids.data(), static_cast<int>(pids.size() * sizeof(pid_t)));
-  if (nbytes <= 0) {
-    throw std::runtime_error(std::format("proc_listpids failed: {}", std::strerror(errno)));
-  }
-
-  const std::size_t npids = static_cast<std::size_t>(nbytes) / sizeof(pid_t);
+  const std::vector<pid_t> pids = list_all_pids();
   std::vector<char> scratch;
   if (need_cmdline) {
     scratch.resize(query_argmax());
   }
 
   Snapshot snap;
-  snap.processes.reserve(npids);
+  snap.processes.reserve(pids.size());
 
-  for (std::size_t i = 0; i < npids; ++i) {
-    const pid_t pid = pids[i];
+  for (pid_t pid : pids) {
     if (pid == 0) {
       continue;
     }
@@ -169,27 +187,10 @@ Snapshot collect_processes(bool need_cmdline,
     if (exclude_pid && pid == *exclude_pid) {
       continue;
     }
-
-    std::uint64_t fp = 0;
-    std::uint64_t peak = 0;
-    if (!footprint_for(pid, fp, peak)) {
-      continue;  // silently skip processes we cannot read
+    if (auto proc = sample_process(pid, need_cmdline, need_path, need_gpu, scratch)) {
+      snap.total_footprint += proc->footprint;
+      snap.processes.push_back(std::move(*proc));
     }
-
-    ProcessInfo proc;
-    proc.pid = pid;
-    proc.footprint = fp;
-    proc.lifetime_max = peak;
-    proc.name = name_for(pid);
-    if (need_path) {
-      proc.path = path_for(pid);
-    }
-    if (need_cmdline) {
-      proc.cmdline = cmdline_for(pid, scratch);
-    }
-
-    snap.total_footprint += fp;
-    snap.processes.push_back(std::move(proc));
   }
 
   return snap;
@@ -221,6 +222,7 @@ SystemMemory collect_system_memory() {
   sys.compressor = static_cast<std::uint64_t>(vm.compressor_page_count) * page;
   sys.file_cache = static_cast<std::uint64_t>(vm.external_page_count) * page;
   sys.free_bytes = static_cast<std::uint64_t>(vm.free_count) * page;
+  sys.gpu = collect_system_gpu_memory();
   sys.valid = true;
   return sys;
 }

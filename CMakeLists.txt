@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(realmem VERSION 0.1.0 LANGUAGES CXX)
+project(realmem VERSION 0.1.1 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -48,6 +48,7 @@ FetchContent_MakeAvailable(ftxui cli11 tomlplusplus)
 
 add_library(realmem_core STATIC
   src/config.cpp
+  src/gpu.cpp
   src/model.cpp
   src/process.cpp
   src/render.cpp
@@ -62,6 +63,8 @@ target_link_libraries(realmem_core PUBLIC
   ftxui::screen
   CLI11::CLI11
   tomlplusplus::tomlplusplus
+  "-framework IOKit"
+  "-framework CoreFoundation"
 )
 
 target_compile_options(realmem_core PRIVATE

@@ -1,4 +1,5 @@
 #include "config.hpp"
+#include "gpu.hpp"
 #include "model.hpp"
 #include "process.hpp"
 #include "render.hpp"
@@ -39,6 +40,14 @@ void test_humanize_and_utf8() {
   EXPECT(sanitize_cmdline("python\t-c\n'print(1)'\r\n") == "python -c 'print(1)'  ");
 }
 
+void test_graphics_ledger_math() {
+  using namespace realmem;
+  EXPECT(combine_graphics_ledger(100, 50) == 150);
+  EXPECT(combine_graphics_ledger(0, 0) == 0);
+  EXPECT(combine_graphics_ledger(-42, 100) == 100);
+  EXPECT(combine_graphics_ledger(100, -10) == 100);
+}
+
 void test_toml_loading_and_precedence() {
   using namespace realmem;
 
@@ -48,6 +57,7 @@ void test_toml_loading_and_precedence() {
     sort = "peak"
     reverse = true
     group = true
+    gpu = true
     bars = false
     color = "never"
 
@@ -61,6 +71,7 @@ void test_toml_loading_and_precedence() {
   EXPECT(cfg.sort == SortField::Peak);
   EXPECT(cfg.reverse == true);
   EXPECT(cfg.group == true);
+  EXPECT(cfg.show_gpu == true);
   EXPECT(cfg.show_bars == false);
   EXPECT(cfg.color == ColorMode::Never);
   EXPECT(cfg.group_rules.size() == 1);
@@ -76,26 +87,28 @@ void test_toml_loading_and_precedence() {
   }
   EXPECT(threw);
 
-  // CLI overrides TOML file.
+  // CLI overrides TOML file (including --no-gpu).
   namespace fs = std::filesystem;
   const fs::path tmp = fs::temp_directory_path() / "realmem_test_config.toml";
   {
     std::ofstream f(tmp);
-    f << "count = 50\nsort = \"peak\"\ngroup = true\n";
+    f << "count = 50\nsort = \"peak\"\ngroup = true\ngpu = true\n";
   }
 
   const std::string cfg_path = tmp.string();
-  const char* argv[] = {"realmem", "--config", cfg_path.c_str(), "-n", "12", "--no-group", "-s", "pid"};
-  const ParseResult res = parse_args_and_config(8, argv);
+  const char* argv[] = {"realmem",   "--config", cfg_path.c_str(), "-n",  "12",
+                        "--no-group", "--no-gpu", "-s",             "pid"};
+  const ParseResult res = parse_args_and_config(9, argv);
   fs::remove(tmp);
 
   EXPECT(!res.should_exit);
   EXPECT(res.config.count == 12);
   EXPECT(res.config.group == false);
+  EXPECT(res.config.show_gpu == false);
   EXPECT(res.config.sort == SortField::Pid);
 }
 
-void test_bare_positional_and_validation() {
+void test_bare_positional_and_gpu_cli() {
   using namespace realmem;
 
   const char* argv1[] = {"realmem", "--no-config", "40"};
@@ -109,6 +122,19 @@ void test_bare_positional_and_validation() {
   EXPECT(!r2.should_exit);
   EXPECT(r2.config.pattern == "python");
   EXPECT(r2.config.sum_only == true);
+
+  // --sort gpu automatically enables the GPU column unless --no-gpu is passed.
+  const char* argv_gpu[] = {"realmem", "--no-config", "--sort", "gpu"};
+  const ParseResult r_gpu = parse_args_and_config(4, argv_gpu);
+  EXPECT(!r_gpu.should_exit);
+  EXPECT(r_gpu.config.sort == SortField::Gpu);
+  EXPECT(r_gpu.config.show_gpu == true);
+
+  const char* argv_nogpu[] = {"realmem", "--no-config", "--sort", "gpu", "--no-gpu"};
+  const ParseResult r_nogpu = parse_args_and_config(5, argv_nogpu);
+  EXPECT(!r_nogpu.should_exit);
+  EXPECT(r_nogpu.config.sort == SortField::Gpu);
+  EXPECT(r_nogpu.config.show_gpu == false);
 
   // --sum without regex must fail.
   const char* argv3[] = {"realmem", "--no-config", "--sum"};
@@ -129,33 +155,52 @@ void test_grouping_filtering_and_sorting() {
   Snapshot snap;
   snap.total_pids = 5;
   snap.processes = {
-      ProcessInfo{101, 500, 900, "Google Chrome Helper (Renderer)",
+      ProcessInfo{101, 500, 900, 200, "Google Chrome Helper (Renderer)",
                   "/Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Helper.app/Contents/MacOS/Google Chrome Helper",
                   "/Applications/Google Chrome.app/... --type=renderer"},
-      ProcessInfo{102, 300, 400, "Google Chrome",
+      ProcessInfo{102, 300, 400, 150, "Google Chrome",
                   "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
                   "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"},
-      ProcessInfo{103, 700, 1200, "python3.12", "/usr/bin/python3", "python3 train.py"},
-      ProcessInfo{104, 200, 250, "com.apple.WebKit.WebContent", "", ""},
+      ProcessInfo{103, 700, 1200, 600, "python3.12", "/usr/bin/python3", "python3 train.py"},
+      ProcessInfo{104, 200, 250, std::nullopt, "com.apple.WebKit.WebContent", "", ""},
   };
   snap.total_footprint = 1700;
 
-  // Test grouping via .app bundle + WebKit fallback + custom rule.
+  // Test grouping via .app bundle + WebKit fallback + custom rule + GPU sum.
   Config cfg;
   cfg.group = true;
+  cfg.show_gpu = true;
   cfg.sort = SortField::Footprint;
   cfg.group_rules.push_back(GroupRule{"train\\.py", "Training"});
 
   const QuerySummary grouped = build_query_summary(snap, cfg);
   EXPECT(grouped.rows.size() == 3);
+  EXPECT(grouped.gpu_readable_procs == 3);
   EXPECT(grouped.rows[0].name == "Google Chrome");
   EXPECT(grouped.rows[0].proc_count == 2);
   EXPECT(grouped.rows[0].footprint == 800);
   EXPECT(grouped.rows[0].peak == 1300);
+  EXPECT(grouped.rows[0].gpu_footprint == 350);
   EXPECT(grouped.rows[1].name == "Training");
+  EXPECT(grouped.rows[1].gpu_footprint == 600);
   EXPECT(grouped.rows[2].name == "WebKit");
+  EXPECT(!grouped.rows[2].gpu_footprint.has_value());
+
+  // Test sorting by GPU (known descending, nullopt always last even when reversed).
+  cfg.sort = SortField::Gpu;
+  const QuerySummary by_gpu = build_query_summary(snap, cfg);
+  EXPECT(by_gpu.rows[0].name == "Training");
+  EXPECT(by_gpu.rows[1].name == "Google Chrome");
+  EXPECT(by_gpu.rows[2].name == "WebKit");
+
+  cfg.reverse = true;
+  const QuerySummary by_gpu_rev = build_query_summary(snap, cfg);
+  EXPECT(by_gpu_rev.rows[0].name == "Google Chrome");
+  EXPECT(by_gpu_rev.rows[1].name == "Training");
+  EXPECT(by_gpu_rev.rows[2].name == "WebKit");
 
   // Test sorting by count.
+  cfg.reverse = false;
   cfg.sort = SortField::Count;
   const QuerySummary by_cnt = build_query_summary(snap, cfg);
   EXPECT(by_cnt.rows[0].name == "Google Chrome");
@@ -228,9 +273,12 @@ void test_rendering_plain_and_ftxui() {
   Snapshot snap;
   snap.total_pids = 10;
   snap.processes = {
-      ProcessInfo{42, 1024ULL * 1024 * 600, 1024ULL * 1024 * 900, "ghostty", "", "ghostty"},
+      ProcessInfo{42, 1024ULL * 1024 * 600, 1024ULL * 1024 * 900, 1024ULL * 1024 * 256, "ghostty",
+                  "", "ghostty --title demo"},
+      ProcessInfo{99, 1024ULL * 1024 * 120, 1024ULL * 1024 * 150, std::nullopt, "WindowServer", "",
+                  ""},
   };
-  snap.total_footprint = snap.processes[0].footprint;
+  snap.total_footprint = snap.processes[0].footprint + snap.processes[1].footprint;
 
   SystemMemory sys;
   sys.total = 48ULL * 1024 * 1024 * 1024;
@@ -238,40 +286,62 @@ void test_rendering_plain_and_ftxui() {
   sys.anonymous = 18ULL * 1024 * 1024 * 1024;
   sys.compressor = 3ULL * 1024 * 1024 * 1024;
   sys.file_cache = 12ULL * 1024 * 1024 * 1024;
+  sys.gpu.allocated = 2ULL * 1024 * 1024 * 1024;
+  sys.gpu.in_use = 512ULL * 1024 * 1024;
+  sys.gpu.valid = true;
   sys.valid = true;
 
   Config cfg;
+  cfg.show_gpu = true;
   const QuerySummary summary = build_query_summary(snap, cfg);
 
-  // Plain rendering
+  // Plain rendering with GPU column and system GPU line.
   const std::string plain = render_output(summary, sys, cfg, RenderContext{100, false});
-  EXPECT(plain.find("ghostty") != std::string::npos);
-  EXPECT(plain.find("wired") != std::string::npos);
+  EXPECT(plain.find("GPU") != std::string::npos);
+  EXPECT(plain.find("256.0M") != std::string::npos);
   EXPECT(plain.find("6.0G wired") != std::string::npos);
+  EXPECT(plain.find("gpu: 2.0G alloc (512.0M in use)") != std::string::npos);
+  EXPECT(plain.find("requires sudo") == std::string::npos);
   EXPECT(plain.find("\x1b[") == std::string::npos);
 
-  // FTXUI rich rendering (wide + narrow 80-col long mode)
+  // FTXUI rich rendering (wide + narrow 80-col long + GPU mode).
   cfg.color = ColorMode::Always;
-  const std::string rich = render_output(summary, sys, cfg, RenderContext{100, true});
+  const std::string rich = render_output(summary, sys, cfg, RenderContext{110, true});
   EXPECT(rich.find("ghostty") != std::string::npos);
-  EXPECT(rich.find("wired") != std::string::npos);
-  EXPECT(rich.find("6.0G") != std::string::npos);
+  EXPECT(rich.find("256.0M") != std::string::npos);
+  EXPECT(rich.find("2.0G") != std::string::npos);
+  EXPECT(rich.find("512.0M") != std::string::npos);
   EXPECT(rich.find("\x1b[") != std::string::npos);
   EXPECT(rich.find('\r') == std::string::npos);
 
   cfg.long_format = true;
   const std::string narrow_long = render_output(summary, sys, cfg, RenderContext{80, true});
   EXPECT(narrow_long.find("FOOTPRINT") != std::string::npos);
+  EXPECT(narrow_long.find("GPU") != std::string::npos);
   EXPECT(narrow_long.find("PEAK") != std::string::npos);
   EXPECT(narrow_long.find("file cache (reclaimable)") != std::string::npos);
+
+  // Unprivileged --gpu hint appears when no process had readable GPU ledger.
+  Snapshot no_gpu_snap;
+  no_gpu_snap.total_pids = 1;
+  no_gpu_snap.processes = {
+      ProcessInfo{7, 1024 * 1024, 1024 * 1024, std::nullopt, "zsh", "", "zsh"},
+  };
+  no_gpu_snap.total_footprint = 1024 * 1024;
+  Config hint_cfg;
+  hint_cfg.show_gpu = true;
+  const QuerySummary no_gpu_summary = build_query_summary(no_gpu_snap, hint_cfg);
+  const std::string hinted = render_output(no_gpu_summary, sys, hint_cfg, RenderContext{100, false});
+  EXPECT(hinted.find("per-process GPU requires sudo") != std::string::npos);
 }
 
 }  // namespace
 
 int main() {
   test_humanize_and_utf8();
+  test_graphics_ledger_math();
   test_toml_loading_and_precedence();
-  test_bare_positional_and_validation();
+  test_bare_positional_and_gpu_cli();
   test_grouping_filtering_and_sorting();
   test_config_discovery();
   test_rendering_plain_and_ftxui();
