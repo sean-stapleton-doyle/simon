@@ -147,6 +147,9 @@ if(BUILD_TESTING)
   )
   target_link_libraries(simon_tests PRIVATE simon_core Catch2::Catch2WithMain)
   target_compile_options(simon_tests PRIVATE -Wall -Wextra -Wpedantic)
+  # Tests create scratch files here instead of the shared system temp dir.
+  target_compile_definitions(simon_tests PRIVATE
+    SIMON_TEST_SCRATCH_DIR="${CMAKE_CURRENT_BINARY_DIR}/test-scratch")
 
   list(APPEND CMAKE_MODULE_PATH ${catch2_SOURCE_DIR}/extras)
   include(Catch)
