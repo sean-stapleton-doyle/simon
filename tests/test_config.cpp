@@ -2,22 +2,39 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <unistd.h>  // mkdtemp
+
+#include <cerrno>
 #include <filesystem>
 #include <fstream>
 #include <stdexcept>
 #include <string>
+#include <system_error>
 
 namespace {
 
 using namespace simon;
 
+// Scratch directory under the build tree (SIMON_TEST_SCRATCH_DIR), not the
+// shared system temp dir. mkdtemp gives it a unique, owner-only name, so
+// parallel ctest runs never share or pre-empt one another's directories.
 struct TempDir {
   std::filesystem::path path;
-  explicit TempDir(const char* name) : path(std::filesystem::temp_directory_path() / name) {
-    std::filesystem::remove_all(path);
-    std::filesystem::create_directories(path);
+  explicit TempDir(const char* prefix) {
+    const std::filesystem::path root{SIMON_TEST_SCRATCH_DIR};
+    std::filesystem::create_directories(root);
+    std::string tmpl = (root / (std::string(prefix) + ".XXXXXX")).string();
+    if (::mkdtemp(tmpl.data()) == nullptr) {
+      throw std::system_error(errno, std::generic_category(), "mkdtemp " + tmpl);
+    }
+    path = tmpl;
   }
-  ~TempDir() { std::filesystem::remove_all(path); }
+  ~TempDir() {
+    std::error_code ec;
+    std::filesystem::remove_all(path, ec);
+  }
+  TempDir(const TempDir&) = delete;
+  TempDir& operator=(const TempDir&) = delete;
 };
 
 }  // namespace
@@ -205,7 +222,9 @@ TEST_CASE("CLI parsing, TOML override precedence, and positional arguments", "[c
   }
 
   SECTION("nonexistent explicit --config returns error") {
-    const char* argv[] = {"simon", "--config", "/tmp/does_not_exist_simon_99999.toml"};
+    TempDir tmp("simon_test_missing_config");
+    const std::string missing = (tmp.path / "does_not_exist.toml").string();
+    const char* argv[] = {"simon", "--config", missing.c_str()};
     const ParseResult res = parse_args_and_config(3, argv);
     REQUIRE(res.should_exit);
     REQUIRE(res.exit_code == 2);
